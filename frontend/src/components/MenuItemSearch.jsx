@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 
-const MAX_RESULTS = 8
-
 function MenuItemSearch({
   items,
   status,
   error,
   selectedId,
+  helperMessage,
   onSelect,
   onRetry,
 }) {
@@ -23,12 +22,22 @@ function MenuItemSearch({
     return items.find((item) => item.id === selectedId)
   }, [items, selectedId])
 
+  const isInteractive = status === 'success'
+
   useEffect(() => {
     if (!open) {
       setQuery('')
       setActiveIndex(0)
     }
   }, [open])
+
+  useEffect(() => {
+    if (!isInteractive) {
+      setQuery('')
+      setActiveIndex(0)
+      setOpen(false)
+    }
+  }, [isInteractive])
 
   useEffect(() => {
     setActiveIndex(0)
@@ -65,7 +74,7 @@ function MenuItemSearch({
   }, [open])
 
   const normalizedQuery = query.trim().toLowerCase()
-  const canSearch = status === 'success'
+  const canSearch = isInteractive
 
   const filteredItems = useMemo(() => {
     if (!canSearch || !items.length) {
@@ -73,7 +82,7 @@ function MenuItemSearch({
     }
 
     if (!normalizedQuery) {
-      return items.slice(0, MAX_RESULTS)
+      return items
     }
 
     const matches = items.filter((item) => {
@@ -82,7 +91,7 @@ function MenuItemSearch({
       return nameMatch || idMatch
     })
 
-    return matches.slice(0, MAX_RESULTS)
+    return matches
   }, [canSearch, items, normalizedQuery])
 
   useEffect(() => {
@@ -93,6 +102,9 @@ function MenuItemSearch({
 
   const handleFocus = () => {
     setOpen(true)
+    if (!isInteractive) {
+      return
+    }
     setQuery((previous) => {
       if (previous) {
         return previous
@@ -115,6 +127,13 @@ function MenuItemSearch({
     }
 
     if (!open) {
+      return
+    }
+
+    if (!isInteractive) {
+      if (event.key === 'Escape') {
+        setOpen(false)
+      }
       return
     }
 
@@ -143,6 +162,19 @@ function MenuItemSearch({
 
   const showDropdown = open
 
+  const inputValue = isInteractive
+    ? showDropdown
+      ? query
+      : selectedItem?.name ?? ''
+    : selectedItem?.name ?? ''
+
+  const inputClasses = [
+    'w-full rounded-md border px-3 py-2 text-sm shadow-sm outline-none transition',
+    isInteractive
+      ? 'border-slate-300 bg-white text-slate-900 focus:border-slate-500 focus:ring-2 focus:ring-slate-200'
+      : 'border-slate-200 bg-slate-100 text-slate-500',
+  ].join(' ')
+
   return (
     <div className="space-y-1">
       <span className="text-xs font-medium uppercase tracking-wide text-slate-500">
@@ -153,17 +185,21 @@ function MenuItemSearch({
           ref={inputRef}
           type="search"
           placeholder="Search by name or ID"
-          value={showDropdown ? query : selectedItem?.name ?? ''}
+          value={inputValue}
           onFocus={handleFocus}
           onChange={(event) => {
+            if (!isInteractive) {
+              return
+            }
             setQuery(event.target.value)
             if (!open) {
               setOpen(true)
             }
           }}
           onKeyDown={handleKeyDown}
+          readOnly={!isInteractive}
           autoComplete="off"
-          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+          className={inputClasses}
         />
 
         {showDropdown ? (
@@ -171,6 +207,10 @@ function MenuItemSearch({
             {status === 'loading' ? (
               <p className="px-3 py-2 text-sm text-slate-500">
                 Loading menu catalog…
+              </p>
+            ) : status === 'idle' ? (
+              <p className="px-3 py-2 text-sm text-slate-500">
+                Select a dining hall, meal, and date to load menu items.
               </p>
             ) : status === 'error' ? (
               <div className="space-y-2 px-3 py-3 text-sm text-red-600">
@@ -206,6 +246,7 @@ function MenuItemSearch({
                       <span className="font-medium">{item.name}</span>
                       <span className="text-xs text-slate-500">
                         Item ID: {item.id}
+                        {item.station ? ` • ${item.station}` : ''}
                       </span>
                     </button>
                   </li>
@@ -219,6 +260,9 @@ function MenuItemSearch({
           </div>
         ) : null}
       </div>
+      {helperMessage ? (
+        <p className="text-xs text-slate-500">{helperMessage}</p>
+      ) : null}
     </div>
   )
 }

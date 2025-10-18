@@ -55,6 +55,10 @@ function UploadPage() {
   const [uploadError, setUploadError] = useState('')
   const fileInputRef = useRef(null)
   const validationTokenRef = useRef(0)
+  const menuContextReady =
+    Boolean(metadata.mealtime) &&
+    Boolean(metadata.date) &&
+    Boolean(metadata.diningHallId)
 
   const formatFileSize = (bytes) => {
     if (!bytes) {
@@ -77,11 +81,97 @@ function UploadPage() {
     return lookup
   }, [menuItems])
 
+  const selectedDiningHall = useMemo(
+    () => diningHalls.find((hall) => String(hall.id) === metadata.diningHallId),
+    [metadata.diningHallId],
+  )
+
+  const formattedMenuDate = useMemo(() => {
+    if (!metadata.date) {
+      return ''
+    }
+    const date = new Date(`${metadata.date}T00:00:00`)
+    if (Number.isNaN(date.getTime())) {
+      return metadata.date
+    }
+    return new Intl.DateTimeFormat('en-US', {
+      month: 'short',
+      day: 'numeric',
+      year: 'numeric',
+    }).format(date)
+  }, [metadata.date])
+
+  const menuContextSummary = useMemo(() => {
+    if (!menuContextReady) {
+      return ''
+    }
+    const parts = []
+    if (selectedDiningHall?.name) {
+      parts.push(selectedDiningHall.name)
+    } else if (metadata.diningHallId) {
+      parts.push(`Hall ${metadata.diningHallId}`)
+    }
+    if (metadata.mealtime) {
+      parts.push(
+        metadata.mealtime.charAt(0).toUpperCase() + metadata.mealtime.slice(1),
+      )
+    }
+    if (formattedMenuDate) {
+      parts.push(formattedMenuDate)
+    }
+    return parts.join(' • ')
+  }, [
+    formattedMenuDate,
+    menuContextReady,
+    metadata.diningHallId,
+    metadata.mealtime,
+    selectedDiningHall?.name,
+  ])
+
+  const menuHelperMessage = useMemo(() => {
+    if (!menuContextReady) {
+      return 'Select mealtime, date, and dining hall to load the current menu.'
+    }
+    if (menuItemsStatus === 'loading') {
+      return menuContextSummary
+        ? `Loading menu for ${menuContextSummary}…`
+        : 'Loading menu for selected context…'
+    }
+    if (menuItemsStatus === 'error') {
+      return 'We couldn’t load the menu. You can still type an item ID manually or retry.'
+    }
+    if (menuItemsStatus === 'success' && menuItems.length === 0) {
+      return menuContextSummary
+        ? `No items listed for ${menuContextSummary}. Enter IDs manually if needed.`
+        : 'No items listed for this selection. Enter IDs manually if needed.'
+    }
+    if (menuItemsStatus === 'success') {
+      return menuContextSummary
+        ? `Showing ${menuItems.length} items for ${menuContextSummary}.`
+        : `Showing ${menuItems.length} items.`
+    }
+    return ''
+  }, [
+    menuContextReady,
+    menuItems.length,
+    menuItemsStatus,
+    menuContextSummary,
+  ])
+
   const retryMenuItems = () => {
-    setMenuItemsRequestId((previous) => previous + 1)
+    if (menuContextReady) {
+      setMenuItemsRequestId((previous) => previous + 1)
+    }
   }
 
   useEffect(() => {
+    if (!menuContextReady) {
+      setMenuItems([])
+      setMenuItemsStatus('idle')
+      setMenuItemsError('')
+      return
+    }
+
     let cancelled = false
     const controller = new AbortController()
 
@@ -89,8 +179,14 @@ function UploadPage() {
       setMenuItemsStatus('loading')
       setMenuItemsError('')
       try {
+        const params = new URLSearchParams({
+          hallid: metadata.diningHallId,
+          meal: metadata.mealtime,
+          date: metadata.date,
+        })
+
         const response = await fetch(
-          'https://husky-eats.onrender.com/api/menuitem',
+          `https://husky-eats.onrender.com/api/menu?${params.toString()}`,
           { signal: controller.signal },
         )
 
@@ -117,6 +213,7 @@ function UploadPage() {
             uniqueById.set(id, {
               id,
               name: item.name,
+              station: item.station ?? '',
             })
           }
         }
@@ -132,6 +229,7 @@ function UploadPage() {
           return
         }
 
+        setMenuItems([])
         setMenuItemsStatus('error')
         setMenuItemsError(error.message ?? 'Failed to load menu items.')
       }
@@ -143,7 +241,13 @@ function UploadPage() {
       cancelled = true
       controller.abort()
     }
-  }, [menuItemsRequestId])
+  }, [
+    menuContextReady,
+    metadata.date,
+    metadata.diningHallId,
+    metadata.mealtime,
+    menuItemsRequestId,
+  ])
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0]
@@ -537,6 +641,7 @@ function UploadPage() {
                             status={menuItemsStatus}
                             error={menuItemsError}
                             selectedId={item.menuItemId}
+                            helperMessage={menuHelperMessage}
                             onSelect={(menuItemId) =>
                               updateItemField(item.id, 'menuItemId', menuItemId)
                             }
