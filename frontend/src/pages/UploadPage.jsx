@@ -12,8 +12,8 @@ const diningHalls = [
   { id: 42, name: 'Towers' },
 ]
 
-const MAX_FILE_SIZE_BYTES = 1024 * 1024
-const REQUIRED_IMAGE_SIZE = 512
+const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
+const REQUIRED_IMAGE_SIZE = 1024
 
 const difficultyOptions = [
   {
@@ -263,10 +263,10 @@ function UploadPage() {
 
     if (file.size > MAX_FILE_SIZE_BYTES) {
       setUploadError(
-        `Image must be under 1 MB. Selected file is ${formatFileSize(file.size)}.`,
+        `Image must be under 2 MB. Selected file is ${formatFileSize(file.size)}.`,
       )
       window.alert(
-        `Image must be under 1 MB. Selected file is ${formatFileSize(file.size)}.`,
+        `Image must be under 2 MB. Selected file is ${formatFileSize(file.size)}.`,
       )
       if (fileInputRef.current) {
         fileInputRef.current.value = ''
@@ -389,7 +389,7 @@ function UploadPage() {
           <ul className="mt-1 list-inside list-disc space-y-1">
             <li>
               Resize the photo to{' '}
-              <span className="font-semibold">512 × 512 pixels</span> using{' '}
+              <span className="font-semibold">1024 × 1024 pixels</span> using{' '}
               <a
                 className="underline decoration-dotted underline-offset-4 hover:text-amber-900"
                 href="https://new.express.adobe.com/tools/resize-image"
@@ -401,7 +401,7 @@ function UploadPage() {
               .
             </li>
             <li>
-              Keep the file under <span className="font-semibold">1 MB</span> if
+              Keep the file under <span className="font-semibold">2 MB</span> if
               possible for faster uploads.
             </li>
             <li>
@@ -448,7 +448,7 @@ function UploadPage() {
                 </span>
               ) : (
                 <span className="text-[11px] text-slate-400">
-                  Target &lt; 1 MB, 512×512
+                  Target &lt; 2 MB, 1024×1024
                 </span>
               )}
             </div>
