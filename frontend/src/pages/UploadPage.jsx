@@ -11,6 +11,9 @@ const diningHalls = [
   { id: 42, name: 'Towers' },
 ]
 
+const MAX_FILE_SIZE_BYTES = 1024 * 1024
+const REQUIRED_IMAGE_SIZE = 512
+
 const difficultyOptions = [
   {
     value: 'simple',
@@ -44,23 +47,94 @@ function UploadPage() {
   })
   const [items, setItems] = useState([{ id: 0, menuItemId: '', servings: '' }])
   const nextItemId = useRef(1)
+  const [uploadError, setUploadError] = useState('')
+  const fileInputRef = useRef(null)
+  const validationTokenRef = useRef(0)
+
+  const formatFileSize = (bytes) => {
+    if (!bytes) {
+      return '0 B'
+    }
+    if (bytes < 1024) {
+      return `${bytes} B`
+    }
+    if (bytes < 1024 * 1024) {
+      return `${Math.round(bytes / 1024)} KB`
+    }
+    return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
+  }
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0]
-    setPlateImage((previous) => {
-      if (previous?.previewUrl) {
-        URL.revokeObjectURL(previous.previewUrl)
+    validationTokenRef.current += 1
+    const currentToken = validationTokenRef.current
+
+    setPlateImage(null)
+
+    if (!file) {
+      setUploadError('')
+      return
+    }
+
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      setUploadError(
+        `Image must be under 1 MB. Selected file is ${formatFileSize(file.size)}.`,
+      )
+      window.alert(
+        `Image must be under 1 MB. Selected file is ${formatFileSize(file.size)}.`,
+      )
+      if (fileInputRef.current) {
+        fileInputRef.current.value = ''
+      }
+      return
+    }
+
+    const previewUrl = URL.createObjectURL(file)
+    const img = new Image()
+
+    img.onload = () => {
+      if (validationTokenRef.current !== currentToken) {
+        URL.revokeObjectURL(previewUrl)
+        return
       }
 
-      if (!file) {
-        return null
+      const { width, height } = img
+
+      if (width !== REQUIRED_IMAGE_SIZE || height !== REQUIRED_IMAGE_SIZE) {
+        URL.revokeObjectURL(previewUrl)
+        setUploadError(
+          `Image must be ${REQUIRED_IMAGE_SIZE}×${REQUIRED_IMAGE_SIZE}. Selected file is ${width}×${height}.`,
+        )
+        window.alert(
+          `Image must be ${REQUIRED_IMAGE_SIZE}×${REQUIRED_IMAGE_SIZE}. Selected file is ${width}×${height}.`,
+        )
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
+        return
       }
 
-      return {
+      setUploadError('')
+      setPlateImage({
         file,
-        previewUrl: URL.createObjectURL(file),
+        previewUrl,
+        width,
+        height,
+      })
+    }
+
+    img.onerror = () => {
+      if (validationTokenRef.current === currentToken) {
+        setUploadError('Unable to read image file. Please try again.')
+        window.alert('Unable to read image file. Please try again.')
+        if (fileInputRef.current) {
+          fileInputRef.current.value = ''
+        }
       }
-    })
+      URL.revokeObjectURL(previewUrl)
+    }
+
+    img.src = previewUrl
   }
 
   useEffect(() => {
@@ -125,6 +199,31 @@ function UploadPage() {
           count. We&apos;ll wire this form to S3 and DynamoDB in the next
           iteration.
         </p>
+        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+          <p className="font-medium">Before you upload:</p>
+          <ul className="mt-1 list-inside list-disc space-y-1">
+            <li>
+              Resize the photo to{' '}
+              <span className="font-semibold">512 × 512 pixels</span> using{' '}
+              <a
+                className="underline decoration-dotted underline-offset-4 hover:text-amber-900"
+                href="https://new.express.adobe.com/tools/resize-image"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Adobe Express
+              </a>
+              .
+            </li>
+            <li>
+              Keep the file under <span className="font-semibold">1 MB</span> if
+              possible for faster uploads.
+            </li>
+            <li>
+              Crop or frame the image so the plate is centered in the square.
+            </li>
+          </ul>
+        </div>
       </header>
 
       <form
@@ -155,6 +254,18 @@ function UploadPage() {
                   ? plateImage.file.name
                   : 'High-quality photo of the plate'}
               </span>
+              {plateImage?.file ? (
+                <span className="rounded-full bg-white px-2 py-0.5 text-[11px] font-medium text-slate-600 shadow">
+                  {formatFileSize(plateImage.file.size)}
+                  {plateImage.width && plateImage.height
+                    ? ` • ${plateImage.width}×${plateImage.height}`
+                    : null}
+                </span>
+              ) : (
+                <span className="text-[11px] text-slate-400">
+                  Target &lt; 1 MB, 512×512
+                </span>
+              )}
             </div>
             <input
               id="plate-image"
@@ -162,6 +273,7 @@ function UploadPage() {
               type="file"
               accept="image/png, image/jpeg"
               className="sr-only"
+              ref={fileInputRef}
               onChange={handleFileChange}
             />
             {plateImage?.previewUrl ? (
@@ -174,6 +286,20 @@ function UploadPage() {
               </div>
             ) : null}
           </label>
+          {uploadError ? (
+            <div
+              className="flex items-start gap-3 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-red-700 shadow-sm"
+              role="alert"
+            >
+              <span className="text-lg leading-none">⚠️</span>
+              <div className="space-y-1">
+                <p className="text-sm font-semibold text-red-800">
+                  Image needs adjustment
+                </p>
+                <p className="text-sm text-red-700">{uploadError}</p>
+              </div>
+            </div>
+          ) : null}
         </div>
 
         <div className="grid gap-8 lg:grid-cols-5">
