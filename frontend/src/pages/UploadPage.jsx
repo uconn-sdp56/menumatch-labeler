@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+import MenuItemSearch from '../components/MenuItemSearch.jsx'
 
 const diningHalls = [
   { id: 1, name: 'Whitney' },
@@ -46,6 +47,10 @@ function UploadPage() {
     difficulty: '',
   })
   const [items, setItems] = useState([{ id: 0, menuItemId: '', servings: '' }])
+  const [menuItems, setMenuItems] = useState([])
+  const [menuItemsStatus, setMenuItemsStatus] = useState('idle')
+  const [menuItemsError, setMenuItemsError] = useState('')
+  const [menuItemsRequestId, setMenuItemsRequestId] = useState(0)
   const nextItemId = useRef(1)
   const [uploadError, setUploadError] = useState('')
   const fileInputRef = useRef(null)
@@ -63,6 +68,82 @@ function UploadPage() {
     }
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`
   }
+
+  const menuItemsLookup = useMemo(() => {
+    const lookup = new Map()
+    for (const item of menuItems) {
+      lookup.set(item.id, item)
+    }
+    return lookup
+  }, [menuItems])
+
+  const retryMenuItems = () => {
+    setMenuItemsRequestId((previous) => previous + 1)
+  }
+
+  useEffect(() => {
+    let cancelled = false
+    const controller = new AbortController()
+
+    const loadMenuItems = async () => {
+      setMenuItemsStatus('loading')
+      setMenuItemsError('')
+      try {
+        const response = await fetch(
+          'https://husky-eats.onrender.com/api/menuitem',
+          { signal: controller.signal },
+        )
+
+        if (!response.ok) {
+          throw new Error(`Request failed with status ${response.status}`)
+        }
+
+        const payload = await response.json()
+        if (cancelled) {
+          return
+        }
+
+        if (!Array.isArray(payload)) {
+          throw new Error('Unexpected response format.')
+        }
+
+        const uniqueById = new Map()
+        for (const item of payload) {
+          if (!item || item.id == null || !item.name) {
+            continue
+          }
+          const id = String(item.id)
+          if (!uniqueById.has(id)) {
+            uniqueById.set(id, {
+              id,
+              name: item.name,
+            })
+          }
+        }
+
+        const uniqueItems = Array.from(uniqueById.values()).sort((a, b) =>
+          a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
+        )
+
+        setMenuItems(uniqueItems)
+        setMenuItemsStatus('success')
+      } catch (error) {
+        if (cancelled || error.name === 'AbortError') {
+          return
+        }
+
+        setMenuItemsStatus('error')
+        setMenuItemsError(error.message ?? 'Failed to load menu items.')
+      }
+    }
+
+    loadMenuItems()
+
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [menuItemsRequestId])
 
   const handleFileChange = (event) => {
     const file = event.target.files?.[0]
@@ -420,34 +501,65 @@ function UploadPage() {
           <div className="lg:col-span-3 space-y-4">
             <div className="space-y-4">
               {hasItems ? (
-                items.map((item, index) => (
-                  <div
-                    key={item.id}
-                    className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm sm:flex-row sm:items-start"
-                  >
-                    <div className="flex-1 space-y-2">
-                      <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
-                        <span>Item {index + 1}</span>
-                        <span>ID: {item.id}</span>
-                      </div>
-                      <label className="space-y-1">
-                        <span className="text-sm font-medium text-slate-700">
-                          Menu Item ID
-                        </span>
-                        <input
-                          type="text"
-                          required
-                          placeholder="e.g. menu-12345"
-                          value={item.menuItemId}
-                          onChange={(event) =>
-                            updateItemField(item.id, 'menuItemId', event.target.value)
-                          }
-                          className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                        />
-                      </label>
-                    </div>
+                items.map((item, index) => {
+                  const selectedMenuItem = menuItemsLookup.get(item.menuItemId)
+                  const unmatchedSelection =
+                    item.menuItemId &&
+                    !selectedMenuItem &&
+                    menuItemsStatus === 'success'
 
-                    <label className="w-full space-y-1 sm:w-40">
+                  return (
+                    <div
+                      key={item.id}
+                      className="flex flex-col gap-4 rounded-lg border border-slate-200 bg-slate-50 p-4 shadow-sm sm:flex-row sm:items-start"
+                    >
+                      <div className="flex-1 space-y-2">
+                        <div className="flex items-center justify-between text-xs uppercase tracking-wide text-slate-500">
+                          <span>Item {index + 1}</span>
+                          <span>ID: {item.id}</span>
+                        </div>
+                        <label className="space-y-1">
+                          <span className="text-sm font-medium text-slate-700">
+                            Menu Item ID
+                          </span>
+                          <input
+                            type="text"
+                            required
+                            placeholder="e.g. 61001"
+                            value={item.menuItemId}
+                            onChange={(event) =>
+                              updateItemField(item.id, 'menuItemId', event.target.value)
+                            }
+                            className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                          />
+                          <MenuItemSearch
+                            items={menuItems}
+                            status={menuItemsStatus}
+                            error={menuItemsError}
+                            selectedId={item.menuItemId}
+                            onSelect={(menuItemId) =>
+                              updateItemField(item.id, 'menuItemId', menuItemId)
+                            }
+                            onRetry={retryMenuItems}
+                          />
+                          {selectedMenuItem ? (
+                            <p className="text-xs text-slate-500">
+                              Selected:{' '}
+                              <span className="font-medium text-slate-700">
+                                {selectedMenuItem.name}
+                              </span>
+                            </p>
+                          ) : null}
+                          {unmatchedSelection ? (
+                            <p className="text-xs text-amber-600">
+                              This ID is not in the Husky Eats catalog. Double-check
+                              the value or search again.
+                            </p>
+                          ) : null}
+                        </label>
+                      </div>
+
+                      <label className="w-full space-y-1 sm:w-40">
                       <span className="text-sm font-medium text-slate-700">
                         Servings
                       </span>
@@ -474,7 +586,8 @@ function UploadPage() {
                       Remove
                     </button>
                   </div>
-                ))
+                  )
+                })
               ) : (
                 <div className="rounded-md border border-dashed border-slate-300 bg-slate-50 p-6 text-center text-sm text-slate-500">
                   No items yet. Add your first menu item below.
