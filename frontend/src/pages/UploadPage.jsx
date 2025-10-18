@@ -1,9 +1,19 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import DiningHallReference from '../components/DiningHallReference.jsx'
+
+const diningHalls = [
+  { id: 1, name: 'Whitney' },
+  { id: 3, name: 'Connecticut' },
+  { id: 5, name: 'McMahon' },
+  { id: 6, name: 'Putnam' },
+  { id: 7, name: 'North' },
+  { id: 15, name: 'Northwest' },
+  { id: 16, name: 'South' },
+  { id: 42, name: 'Towers' },
+]
 
 const difficultyOptions = [
   {
-    value: 'very_simple',
+    value: 'simple',
     label: 'Simple',
     helper: '1 item, minimal stacking',
   },
@@ -216,20 +226,21 @@ function UploadPage() {
                 <span className="text-sm font-medium text-slate-700">
                   Dining Hall ID
                 </span>
-                <div className="space-y-2">
-                  <input
-                    type="text"
-                    placeholder="e.g. 3 or dh-woodworth"
-                    value={metadata.diningHallId}
-                    onChange={setMetadataField('diningHallId')}
-                    className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                    required
-                  />
-                  <p className="text-xs text-slate-500">
-                    Tip: Select a hall from the reference list below to auto-fill this
-                    field.
-                  </p>
-                </div>
+                <select
+                  value={metadata.diningHallId}
+                  onChange={setMetadataField('diningHallId')}
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  required
+                >
+                  <option value="" disabled>
+                    Select dining hall
+                  </option>
+                  {diningHalls.map((hall) => (
+                    <option key={hall.id} value={hall.id}>
+                      {hall.id} — {hall.name}
+                    </option>
+                  ))}
+                </select>
               </label>
             </div>
 
@@ -263,14 +274,6 @@ function UploadPage() {
               </div>
             </fieldset>
 
-            <DiningHallReference
-              onSelect={(hall) =>
-                setMetadata((previous) => ({
-                  ...previous,
-                  diningHallId: String(hall.id),
-                }))
-              }
-            />
           </div>
         </div>
 
