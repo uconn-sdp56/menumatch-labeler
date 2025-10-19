@@ -1,21 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MenuItemSearch from '../components/MenuItemSearch.jsx'
-
-const API_BASE_URL =
-  import.meta.env.VITE_UPLOAD_API_BASE_URL ||
-  'https://mmetph8kc0.execute-api.us-east-1.amazonaws.com/dev'
-const TOKEN_STORAGE_KEY = 'menumatch-upload-token'
-
-const diningHalls = [
-  { id: 1, name: 'Whitney' },
-  { id: 3, name: 'Connecticut' },
-  { id: 5, name: 'McMahon' },
-  { id: 6, name: 'Putnam' },
-  { id: 7, name: 'North' },
-  { id: 15, name: 'Northwest' },
-  { id: 16, name: 'South' },
-  { id: 42, name: 'Towers' },
-]
+import { API_BASE_URL } from '../lib/config.js'
+import { DINING_HALLS } from '../lib/diningHalls.js'
+import {
+  clearAuthToken,
+  getStoredAuthToken,
+  persistAuthToken,
+} from '../lib/auth.js'
 
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 const REQUIRED_IMAGE_SIZE = 1024
@@ -62,24 +53,9 @@ function UploadPage() {
   const [uploadError, setUploadError] = useState('')
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitMessage, setSubmitMessage] = useState('')
-  const [authToken, setAuthToken] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem(TOKEN_STORAGE_KEY) || ''
-    }
-    return ''
-  })
-  const [tokenInput, setTokenInput] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return window.localStorage.getItem(TOKEN_STORAGE_KEY) || ''
-    }
-    return ''
-  })
-  const [tokenModalOpen, setTokenModalOpen] = useState(() => {
-    if (typeof window !== 'undefined') {
-      return !window.localStorage.getItem(TOKEN_STORAGE_KEY)
-    }
-    return true
-  })
+  const [authToken, setAuthToken] = useState(() => getStoredAuthToken())
+  const [tokenInput, setTokenInput] = useState(() => getStoredAuthToken())
+  const [tokenModalOpen, setTokenModalOpen] = useState(() => !getStoredAuthToken())
   const [tokenFeedback, setTokenFeedback] = useState('')
   const fileInputRef = useRef(null)
   const validationTokenRef = useRef(0)
@@ -120,7 +96,7 @@ function UploadPage() {
   }, [menuItems])
 
   const selectedDiningHall = useMemo(
-    () => diningHalls.find((hall) => String(hall.id) === metadata.diningHallId),
+    () => DINING_HALLS.find((hall) => String(hall.id) === metadata.diningHallId),
     [metadata.diningHallId],
   )
 
@@ -201,17 +177,6 @@ function UploadPage() {
       setMenuItemsRequestId((previous) => previous + 1)
     }
   }
-
-  useEffect(() => {
-    if (typeof window === 'undefined') {
-      return
-    }
-    if (authToken) {
-      window.localStorage.setItem(TOKEN_STORAGE_KEY, authToken)
-    } else {
-      window.localStorage.removeItem(TOKEN_STORAGE_KEY)
-    }
-  }, [authToken])
 
   useEffect(() => {
     if (!menuContextReady) {
@@ -442,9 +407,10 @@ function UploadPage() {
     event.preventDefault()
     const trimmed = tokenInput.trim()
     if (!trimmed) {
-      setTokenFeedback('Enter your team upload token to continue.')
+      setTokenFeedback('Enter your team API token to continue.')
       return
     }
+    persistAuthToken(trimmed)
     setAuthToken(trimmed)
     setTokenInput(trimmed)
     setTokenModalOpen(false)
@@ -452,6 +418,7 @@ function UploadPage() {
   }
 
   const handleTokenReset = () => {
+    clearAuthToken()
     setAuthToken('')
     setTokenInput('')
     setTokenFeedback('')
@@ -473,7 +440,7 @@ function UploadPage() {
 
     if (!authToken) {
       setSubmitStatus('error')
-      setSubmitMessage('Enter the team upload token before saving the draft.')
+      setSubmitMessage('Enter the team API token before saving the draft.')
       openTokenDialog()
       return
     }
@@ -612,11 +579,12 @@ function UploadPage() {
           >
             <div className="space-y-1">
               <h2 className="text-xl font-semibold text-slate-900">
-                Enter Upload API Token
+                Enter API Token
               </h2>
               <p className="text-sm text-slate-600">
-                This token authorizes the request that saves plate metadata. Ask a
-                teammate for the shared token if you don&apos;t have it.
+                This token authorizes MenuMatch API requests for uploads and
+                dataset access. Ask a teammate for the shared token if you
+                don&apos;t have it.
               </p>
             </div>
             <label className="space-y-2">
@@ -701,7 +669,7 @@ function UploadPage() {
 
         <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
           <div className="flex flex-col gap-1">
-            <span className="font-medium text-slate-800">Upload API token</span>
+            <span className="font-medium text-slate-800">Team API token</span>
             <span>
               {authToken
                 ? `Configured (${maskedToken || '••••'})`
@@ -863,7 +831,7 @@ function UploadPage() {
                   <option value="" disabled>
                     Select dining hall
                   </option>
-                  {diningHalls.map((hall) => (
+                  {DINING_HALLS.map((hall) => (
                     <option key={hall.id} value={hall.id}>
                       {hall.id} — {hall.name}
                     </option>
