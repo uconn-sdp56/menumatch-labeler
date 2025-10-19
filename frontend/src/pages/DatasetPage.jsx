@@ -1,11 +1,8 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
 
+import ApiTokenStatusCard from '../components/ApiTokenStatusCard.jsx'
+import { useApiToken } from '../components/ApiTokenProvider.jsx'
 import { API_BASE_URL } from '../lib/config.js'
-import {
-  clearAuthToken,
-  getStoredAuthToken,
-  persistAuthToken,
-} from '../lib/auth.js'
 import { getDiningHallName } from '../lib/diningHalls.js'
 
 function formatDate(value) {
@@ -72,9 +69,7 @@ function formatServings(value) {
 }
 
 function DatasetPage() {
-  const [authToken, setAuthToken] = useState(() => getStoredAuthToken())
-  const [tokenInput, setTokenInput] = useState(() => getStoredAuthToken())
-  const [tokenNotice, setTokenNotice] = useState(null)
+  const { authToken, openTokenModal } = useApiToken()
   const [status, setStatus] = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [records, setRecords] = useState([])
@@ -161,43 +156,9 @@ function DatasetPage() {
     return () => controller.abort()
   }, [authToken, fetchDataset])
 
-  const handleTokenSave = (event) => {
-    event.preventDefault()
-    const trimmed = tokenInput.trim()
-
-    if (!trimmed) {
-      setTokenNotice({
-        variant: 'error',
-        message: 'Enter your team API token before saving.',
-      })
-      return
-    }
-
-    persistAuthToken(trimmed)
-    setAuthToken(trimmed)
-    setTokenInput(trimmed)
-    setTokenNotice({
-      variant: 'success',
-      message: 'Token saved. Dataset will refresh automatically.',
-    })
-  }
-
-  const handleTokenClear = () => {
-    clearAuthToken()
-    setAuthToken('')
-    setTokenInput('')
-    setTokenNotice({
-      variant: 'info',
-      message: 'Token removed. Dataset cleared.',
-    })
-  }
-
   const handleRefresh = () => {
     if (!authToken) {
-      setTokenNotice({
-        variant: 'error',
-        message: 'Set the team API token to view the dataset.',
-      })
+      openTokenModal()
       return
     }
 
@@ -271,18 +232,10 @@ function DatasetPage() {
     authToken && status === 'success' && recordCount === 0
   const showLoadingIndicator = status === 'loading' && recordCount === 0
 
-  const tokenNoticeClass =
-    tokenNotice?.variant === 'error'
-      ? 'text-red-600'
-      : tokenNotice?.variant === 'success'
-        ? 'text-emerald-600'
-        : 'text-slate-600'
-
-  const tokenSuffix =
-    authToken && authToken.length > 4 ? authToken.slice(-4) : ''
-
   return (
     <section className="space-y-8">
+      <ApiTokenStatusCard />
+
       <header className="space-y-2">
         <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
           Dataset Overview
@@ -294,62 +247,7 @@ function DatasetPage() {
         </p>
       </header>
 
-      <div className="space-y-6">
-        <div className="rounded-lg border border-slate-200 bg-white p-6 shadow-sm">
-          <form onSubmit={handleTokenSave} className="space-y-4">
-            <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-              <label className="flex flex-1 flex-col gap-2">
-                <span className="text-sm font-medium text-slate-700">
-                  Team API token
-                </span>
-                <input
-                  type="password"
-                  value={tokenInput}
-                  onChange={(event) => {
-                    setTokenInput(event.target.value)
-                    if (tokenNotice?.variant === 'error') {
-                      setTokenNotice(null)
-                    }
-                  }}
-                  placeholder="Paste shared token to enable dataset access"
-                  autoComplete="off"
-                  className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                />
-              </label>
-              <div className="flex flex-col gap-2 sm:flex-row">
-                <button
-                  type="submit"
-                  className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-                >
-                  Save token
-                </button>
-                {authToken ? (
-                  <button
-                    type="button"
-                    onClick={handleTokenClear}
-                    className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-                  >
-                    Remove token
-                  </button>
-                ) : null}
-              </div>
-            </div>
-            <div className="flex flex-col gap-1 text-xs text-slate-500">
-              <span>
-                {authToken
-                  ? tokenSuffix
-                    ? `Saved token ending with ${tokenSuffix}.`
-                    : 'Saved token on file.'
-                  : 'Token not yet configured.'}
-              </span>
-              {tokenNotice ? (
-                <span className={tokenNoticeClass}>{tokenNotice.message}</span>
-              ) : null}
-            </div>
-          </form>
-        </div>
-
-        <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
+      <div className="overflow-hidden rounded-lg border border-slate-200 bg-white shadow-sm">
           <div className="flex flex-col gap-2 border-b border-slate-200 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <h2 className="text-lg font-semibold text-slate-900">
@@ -569,7 +467,6 @@ function DatasetPage() {
             )}
           </div>
         </div>
-      </div>
     </section>
   )
 }

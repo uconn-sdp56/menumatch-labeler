@@ -1,12 +1,9 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MenuItemSearch from '../components/MenuItemSearch.jsx'
+import ApiTokenStatusCard from '../components/ApiTokenStatusCard.jsx'
+import { useApiToken } from '../components/ApiTokenProvider.jsx'
 import { API_BASE_URL } from '../lib/config.js'
 import { DINING_HALLS } from '../lib/diningHalls.js'
-import {
-  clearAuthToken,
-  getStoredAuthToken,
-  persistAuthToken,
-} from '../lib/auth.js'
 
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 const REQUIRED_IMAGE_SIZE = 1024
@@ -42,6 +39,7 @@ const difficultyOptions = [
 ]
 
 function UploadPage() {
+  const { authToken, openTokenModal } = useApiToken()
   const [plateImage, setPlateImage] = useState(null)
   const [metadata, setMetadata] = useState(() => ({ ...INITIAL_METADATA }))
   const [items, setItems] = useState(() => [{ ...INITIAL_ITEM }])
@@ -53,22 +51,9 @@ function UploadPage() {
   const [uploadError, setUploadError] = useState('')
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitMessage, setSubmitMessage] = useState('')
-  const [authToken, setAuthToken] = useState(() => getStoredAuthToken())
-  const [tokenInput, setTokenInput] = useState(() => getStoredAuthToken())
-  const [tokenModalOpen, setTokenModalOpen] = useState(() => !getStoredAuthToken())
-  const [tokenFeedback, setTokenFeedback] = useState('')
   const fileInputRef = useRef(null)
   const validationTokenRef = useRef(0)
   const isSubmitting = submitStatus === 'submitting'
-  const maskedToken = useMemo(() => {
-    if (!authToken) {
-      return ''
-    }
-    if (authToken.length <= 4) {
-      return '••••'
-    }
-    return `••••${authToken.slice(-4)}`
-  }, [authToken])
   const menuContextReady =
     Boolean(metadata.mealtime) &&
     Boolean(metadata.date) &&
@@ -397,34 +382,6 @@ function UploadPage() {
     }
   }
 
-  const openTokenDialog = () => {
-    setTokenInput(authToken)
-    setTokenFeedback('')
-    setTokenModalOpen(true)
-  }
-
-  const handleTokenSubmit = (event) => {
-    event.preventDefault()
-    const trimmed = tokenInput.trim()
-    if (!trimmed) {
-      setTokenFeedback('Enter your team API token to continue.')
-      return
-    }
-    persistAuthToken(trimmed)
-    setAuthToken(trimmed)
-    setTokenInput(trimmed)
-    setTokenModalOpen(false)
-    setTokenFeedback('')
-  }
-
-  const handleTokenReset = () => {
-    clearAuthToken()
-    setAuthToken('')
-    setTokenInput('')
-    setTokenFeedback('')
-    setTokenModalOpen(true)
-  }
-
   const handleSubmit = async (event) => {
     event.preventDefault()
 
@@ -441,7 +398,7 @@ function UploadPage() {
     if (!authToken) {
       setSubmitStatus('error')
       setSubmitMessage('Enter the team API token before saving the draft.')
-      openTokenDialog()
+      openTokenModal()
       return
     }
 
@@ -571,65 +528,9 @@ function UploadPage() {
 
   return (
     <>
-      {tokenModalOpen ? (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
-          <form
-            onSubmit={handleTokenSubmit}
-            className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-lg"
-          >
-            <div className="space-y-1">
-              <h2 className="text-xl font-semibold text-slate-900">
-                Enter API Token
-              </h2>
-              <p className="text-sm text-slate-600">
-                This token authorizes MenuMatch API requests for uploads and
-                dataset access. Ask a teammate for the shared token if you
-                don&apos;t have it.
-              </p>
-            </div>
-            <label className="space-y-2">
-              <span className="text-sm font-medium text-slate-700">Team token</span>
-              <input
-                type="password"
-                value={tokenInput}
-                onChange={(event) => setTokenInput(event.target.value)}
-                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-                autoComplete="off"
-                placeholder="Paste token here"
-              />
-            </label>
-            {tokenFeedback ? (
-              <p className="text-sm text-red-600">{tokenFeedback}</p>
-            ) : null}
-            <div className="flex items-center justify-end gap-3">
-              <button
-                type="button"
-                onClick={() => setTokenModalOpen(false)}
-                className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
-              >
-                Close
-              </button>
-              <button
-                type="submit"
-                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
-              >
-                Save Token
-              </button>
-            </div>
-            {authToken ? (
-              <button
-                type="button"
-                onClick={handleTokenReset}
-                className="text-left text-xs font-medium text-slate-500 underline decoration-dotted underline-offset-4 hover:text-slate-700"
-              >
-                Clear saved token
-              </button>
-            ) : null}
-          </form>
-        </div>
-      ) : null}
-
       <section className="space-y-10">
+        <ApiTokenStatusCard />
+
         <header className="space-y-2">
           <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
             Upload Plate Data
@@ -666,35 +567,6 @@ function UploadPage() {
             </ul>
           </div>
         </header>
-
-        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
-          <div className="flex flex-col gap-1">
-            <span className="font-medium text-slate-800">Team API token</span>
-            <span>
-              {authToken
-                ? `Configured (${maskedToken || '••••'})`
-                : 'Not yet configured'}
-            </span>
-          </div>
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={openTokenDialog}
-              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-white"
-            >
-              {authToken ? 'Update token' : 'Set token'}
-            </button>
-            {authToken ? (
-              <button
-                type="button"
-                onClick={handleTokenReset}
-                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
-              >
-                Remove
-              </button>
-            ) : null}
-          </div>
-        </div>
 
         <form
         onSubmit={handleSubmit}
