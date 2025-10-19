@@ -4,7 +4,7 @@ import MenuItemSearch from '../components/MenuItemSearch.jsx'
 const API_BASE_URL =
   import.meta.env.VITE_UPLOAD_API_BASE_URL ||
   'https://mmetph8kc0.execute-api.us-east-1.amazonaws.com/dev'
-const UPLOAD_API_TOKEN = import.meta.env.VITE_UPLOAD_API_TOKEN || ''
+const TOKEN_STORAGE_KEY = 'menumatch-upload-token'
 
 const diningHalls = [
   { id: 1, name: 'Whitney' },
@@ -62,9 +62,37 @@ function UploadPage() {
   const [uploadError, setUploadError] = useState('')
   const [submitStatus, setSubmitStatus] = useState('idle')
   const [submitMessage, setSubmitMessage] = useState('')
+  const [authToken, setAuthToken] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem(TOKEN_STORAGE_KEY) || ''
+    }
+    return ''
+  })
+  const [tokenInput, setTokenInput] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return window.localStorage.getItem(TOKEN_STORAGE_KEY) || ''
+    }
+    return ''
+  })
+  const [tokenModalOpen, setTokenModalOpen] = useState(() => {
+    if (typeof window !== 'undefined') {
+      return !window.localStorage.getItem(TOKEN_STORAGE_KEY)
+    }
+    return true
+  })
+  const [tokenFeedback, setTokenFeedback] = useState('')
   const fileInputRef = useRef(null)
   const validationTokenRef = useRef(0)
   const isSubmitting = submitStatus === 'submitting'
+  const maskedToken = useMemo(() => {
+    if (!authToken) {
+      return ''
+    }
+    if (authToken.length <= 4) {
+      return '••••'
+    }
+    return `••••${authToken.slice(-4)}`
+  }, [authToken])
   const menuContextReady =
     Boolean(metadata.mealtime) &&
     Boolean(metadata.date) &&
@@ -173,6 +201,17 @@ function UploadPage() {
       setMenuItemsRequestId((previous) => previous + 1)
     }
   }
+
+  useEffect(() => {
+    if (typeof window === 'undefined') {
+      return
+    }
+    if (authToken) {
+      window.localStorage.setItem(TOKEN_STORAGE_KEY, authToken)
+    } else {
+      window.localStorage.removeItem(TOKEN_STORAGE_KEY)
+    }
+  }, [authToken])
 
   useEffect(() => {
     if (!menuContextReady) {
@@ -393,6 +432,32 @@ function UploadPage() {
     }
   }
 
+  const openTokenDialog = () => {
+    setTokenInput(authToken)
+    setTokenFeedback('')
+    setTokenModalOpen(true)
+  }
+
+  const handleTokenSubmit = (event) => {
+    event.preventDefault()
+    const trimmed = tokenInput.trim()
+    if (!trimmed) {
+      setTokenFeedback('Enter your team upload token to continue.')
+      return
+    }
+    setAuthToken(trimmed)
+    setTokenInput(trimmed)
+    setTokenModalOpen(false)
+    setTokenFeedback('')
+  }
+
+  const handleTokenReset = () => {
+    setAuthToken('')
+    setTokenInput('')
+    setTokenFeedback('')
+    setTokenModalOpen(true)
+  }
+
   const handleSubmit = async (event) => {
     event.preventDefault()
 
@@ -403,6 +468,13 @@ function UploadPage() {
     if (!plateImage?.file) {
       setSubmitStatus('error')
       setSubmitMessage('Upload a plate image before saving the draft.')
+      return
+    }
+
+    if (!authToken) {
+      setSubmitStatus('error')
+      setSubmitMessage('Enter the team upload token before saving the draft.')
+      openTokenDialog()
       return
     }
 
@@ -432,9 +504,8 @@ function UploadPage() {
     setSubmitMessage('')
 
     try {
-      const authHeaders = {}
-      if (UPLOAD_API_TOKEN) {
-        authHeaders['X-Upload-Token'] = UPLOAD_API_TOKEN
+      const authHeaders = {
+        'X-Upload-Token': authToken,
       }
 
       const presignResponse = await fetch(`${API_BASE_URL}/uploads/presign`, {
@@ -532,45 +603,132 @@ function UploadPage() {
   }
 
   return (
-    <section className="space-y-10">
-      <header className="space-y-2">
-        <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
-          Upload Plate Data
-        </h1>
-        <p className="max-w-2xl text-base text-slate-600">
-          Start a new labeling session by uploading a plate image, tagging it
-          with dining context, then listing every menu item and its serving
-          count. The form now uploads directly to S3 and stores the metadata in
-          DynamoDB for your evaluation set.
-        </p>
-        <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
-          <p className="font-medium">Before you upload:</p>
-          <ul className="mt-1 list-inside list-disc space-y-1">
-            <li>
-              Resize the photo to{' '}
-              <span className="font-semibold">1024 × 1024 pixels</span> using{' '}
-              <a
-                className="underline decoration-dotted underline-offset-4 hover:text-amber-900"
-                href="https://new.express.adobe.com/tools/resize-image"
-                target="_blank"
-                rel="noreferrer"
+    <>
+      {tokenModalOpen ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/70 px-4 py-8">
+          <form
+            onSubmit={handleTokenSubmit}
+            className="w-full max-w-md space-y-5 rounded-2xl bg-white p-6 shadow-lg"
+          >
+            <div className="space-y-1">
+              <h2 className="text-xl font-semibold text-slate-900">
+                Enter Upload API Token
+              </h2>
+              <p className="text-sm text-slate-600">
+                This token authorizes the request that saves plate metadata. Ask a
+                teammate for the shared token if you don&apos;t have it.
+              </p>
+            </div>
+            <label className="space-y-2">
+              <span className="text-sm font-medium text-slate-700">Team token</span>
+              <input
+                type="password"
+                value={tokenInput}
+                onChange={(event) => setTokenInput(event.target.value)}
+                className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                autoComplete="off"
+                placeholder="Paste token here"
+              />
+            </label>
+            {tokenFeedback ? (
+              <p className="text-sm text-red-600">{tokenFeedback}</p>
+            ) : null}
+            <div className="flex items-center justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => setTokenModalOpen(false)}
+                className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
               >
-                Adobe Express
-              </a>
-              .
-            </li>
-            <li>
-              Keep the file under <span className="font-semibold">2 MB</span> if
-              possible for faster uploads.
-            </li>
-            <li>
-              Crop or frame the image so the plate is centered in the square.
-            </li>
-          </ul>
+                Close
+              </button>
+              <button
+                type="submit"
+                className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+              >
+                Save Token
+              </button>
+            </div>
+            {authToken ? (
+              <button
+                type="button"
+                onClick={handleTokenReset}
+                className="text-left text-xs font-medium text-slate-500 underline decoration-dotted underline-offset-4 hover:text-slate-700"
+              >
+                Clear saved token
+              </button>
+            ) : null}
+          </form>
         </div>
-      </header>
+      ) : null}
 
-      <form
+      <section className="space-y-10">
+        <header className="space-y-2">
+          <h1 className="text-3xl font-semibold tracking-tight text-slate-900">
+            Upload Plate Data
+          </h1>
+          <p className="max-w-2xl text-base text-slate-600">
+            Start a new labeling session by uploading a plate image, tagging it
+            with dining context, then listing every menu item and its serving
+            count. The form now uploads directly to S3 and stores the metadata in
+            DynamoDB for your evaluation set.
+          </p>
+          <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
+            <p className="font-medium">Before you upload:</p>
+            <ul className="mt-1 list-inside list-disc space-y-1">
+              <li>
+                Resize the photo to{' '}
+                <span className="font-semibold">1024 × 1024 pixels</span> using{' '}
+                <a
+                  className="underline decoration-dotted underline-offset-4 hover:text-amber-900"
+                  href="https://new.express.adobe.com/tools/resize-image"
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  Adobe Express
+                </a>
+                .
+              </li>
+              <li>
+                Keep the file under <span className="font-semibold">2 MB</span> if
+                possible for faster uploads.
+              </li>
+              <li>
+                Crop or frame the image so the plate is centered in the square.
+              </li>
+            </ul>
+          </div>
+        </header>
+
+        <div className="flex flex-col gap-3 rounded-xl border border-slate-200 bg-slate-50 p-4 text-sm text-slate-600 sm:flex-row sm:items-center sm:justify-between">
+          <div className="flex flex-col gap-1">
+            <span className="font-medium text-slate-800">Upload API token</span>
+            <span>
+              {authToken
+                ? `Configured (${maskedToken || '••••'})`
+                : 'Not yet configured'}
+            </span>
+          </div>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={openTokenDialog}
+              className="rounded-md border border-slate-300 px-3 py-1.5 text-sm font-medium text-slate-700 transition hover:border-slate-400 hover:bg-white"
+            >
+              {authToken ? 'Update token' : 'Set token'}
+            </button>
+            {authToken ? (
+              <button
+                type="button"
+                onClick={handleTokenReset}
+                className="rounded-md border border-slate-200 px-3 py-1.5 text-sm font-medium text-slate-500 transition hover:border-red-200 hover:bg-red-50 hover:text-red-600"
+              >
+                Remove
+              </button>
+            ) : null}
+          </div>
+        </div>
+
+        <form
         onSubmit={handleSubmit}
         className="space-y-10 rounded-xl border border-slate-200 bg-white p-8 shadow-sm"
       >
@@ -912,7 +1070,8 @@ function UploadPage() {
           </div>
         </div>
       </form>
-    </section>
+      </section>
+    </>
   )
 }
 
