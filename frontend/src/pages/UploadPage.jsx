@@ -1,6 +1,11 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import MenuItemSearch from '../components/MenuItemSearch.jsx'
 
+const API_BASE_URL =
+  import.meta.env.VITE_UPLOAD_API_BASE_URL ||
+  'https://mmetph8kc0.execute-api.us-east-1.amazonaws.com/dev'
+const UPLOAD_API_TOKEN = import.meta.env.VITE_UPLOAD_API_TOKEN || ''
+
 const diningHalls = [
   { id: 1, name: 'Whitney' },
   { id: 3, name: 'Connecticut' },
@@ -14,6 +19,13 @@ const diningHalls = [
 
 const MAX_FILE_SIZE_BYTES = 2 * 1024 * 1024
 const REQUIRED_IMAGE_SIZE = 1024
+const INITIAL_METADATA = Object.freeze({
+  mealtime: '',
+  date: '',
+  diningHallId: '',
+  difficulty: '',
+})
+const INITIAL_ITEM = Object.freeze({ id: 0, menuItemId: '', servings: '' })
 
 const difficultyOptions = [
   {
@@ -40,21 +52,19 @@ const difficultyOptions = [
 
 function UploadPage() {
   const [plateImage, setPlateImage] = useState(null)
-  const [metadata, setMetadata] = useState({
-    mealtime: '',
-    date: '',
-    diningHallId: '',
-    difficulty: '',
-  })
-  const [items, setItems] = useState([{ id: 0, menuItemId: '', servings: '' }])
+  const [metadata, setMetadata] = useState(() => ({ ...INITIAL_METADATA }))
+  const [items, setItems] = useState(() => [{ ...INITIAL_ITEM }])
   const [menuItems, setMenuItems] = useState([])
   const [menuItemsStatus, setMenuItemsStatus] = useState('idle')
   const [menuItemsError, setMenuItemsError] = useState('')
   const [menuItemsRequestId, setMenuItemsRequestId] = useState(0)
   const nextItemId = useRef(1)
   const [uploadError, setUploadError] = useState('')
+  const [submitStatus, setSubmitStatus] = useState('idle')
+  const [submitMessage, setSubmitMessage] = useState('')
   const fileInputRef = useRef(null)
   const validationTokenRef = useRef(0)
+  const isSubmitting = submitStatus === 'submitting'
   const menuContextReady =
     Boolean(metadata.mealtime) &&
     Boolean(metadata.date) &&
@@ -367,9 +377,158 @@ function UploadPage() {
 
   const hasItems = useMemo(() => items.length > 0, [items.length])
 
-  const handleSubmit = (event) => {
+  const resetForm = () => {
+    if (plateImage?.previewUrl) {
+      URL.revokeObjectURL(plateImage.previewUrl)
+    }
+
+    validationTokenRef.current += 1
+    setPlateImage(null)
+    setMetadata(() => ({ ...INITIAL_METADATA }))
+    nextItemId.current = 1
+    setItems(() => [{ ...INITIAL_ITEM }])
+
+    if (fileInputRef.current) {
+      fileInputRef.current.value = ''
+    }
+  }
+
+  const handleSubmit = async (event) => {
     event.preventDefault()
-    // Wire up to upload + metadata Lambda in a later pass.
+
+    if (submitStatus === 'submitting') {
+      return
+    }
+
+    if (!plateImage?.file) {
+      setSubmitStatus('error')
+      setSubmitMessage('Upload a plate image before saving the draft.')
+      return
+    }
+
+    const normalizedItems = items
+      .map((item) => ({
+        menuItemId: String(item.menuItemId || '').trim(),
+        servings: Number(item.servings),
+      }))
+      .filter((item) => item.menuItemId.length > 0)
+
+    if (normalizedItems.length === 0) {
+      setSubmitStatus('error')
+      setSubmitMessage('Add at least one menu item with servings.')
+      return
+    }
+
+    const invalidItem = normalizedItems.find(
+      (item) => Number.isNaN(item.servings) || !Number.isFinite(item.servings),
+    )
+    if (invalidItem) {
+      setSubmitStatus('error')
+      setSubmitMessage('Servings must be a valid number for every item.')
+      return
+    }
+
+    setSubmitStatus('submitting')
+    setSubmitMessage('')
+
+    try {
+      const authHeaders = {}
+      if (UPLOAD_API_TOKEN) {
+        authHeaders['X-Upload-Token'] = UPLOAD_API_TOKEN
+      }
+
+      const presignResponse = await fetch(`${API_BASE_URL}/uploads/presign`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify({
+          filename: plateImage.file.name,
+          contentType: plateImage.file.type,
+        }),
+      })
+
+      if (!presignResponse.ok) {
+        let errorMessage = `Failed to get upload URL (status ${presignResponse.status}).`
+        try {
+          const payload = await presignResponse.json()
+          if (payload?.message) {
+            errorMessage = payload.message
+          }
+        } catch (error) {
+          // ignore JSON parse failures
+        }
+        throw new Error(errorMessage)
+      }
+
+      const presignData = await presignResponse.json()
+      const uploadHeaders = new Headers(presignData.headers || {})
+      if (!uploadHeaders.has('Content-Type') && plateImage.file.type) {
+        uploadHeaders.set('Content-Type', plateImage.file.type)
+      }
+
+      const uploadResponse = await fetch(presignData.uploadUrl, {
+        method: presignData.method || 'PUT',
+        headers: uploadHeaders,
+        body: plateImage.file,
+      })
+
+      if (!uploadResponse.ok) {
+        throw new Error(`S3 upload failed with status ${uploadResponse.status}.`)
+      }
+
+      const metadataPayload = {
+        objectKey: presignData.objectKey,
+        bucket: presignData.bucket,
+        mealtime: metadata.mealtime,
+        date: metadata.date,
+        diningHallId: metadata.diningHallId,
+        difficulty: metadata.difficulty,
+        items: normalizedItems,
+      }
+
+      if (!metadataPayload.bucket) {
+        delete metadataPayload.bucket
+      }
+
+      const metadataResponse = await fetch(`${API_BASE_URL}/uploads/metadata`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          ...authHeaders,
+        },
+        body: JSON.stringify(metadataPayload),
+      })
+
+      if (!metadataResponse.ok) {
+        let errorMessage = `Failed to save metadata (status ${metadataResponse.status}).`
+        try {
+          const payload = await metadataResponse.json()
+          if (payload?.message) {
+            errorMessage = payload.message
+          }
+        } catch (error) {
+          // ignore JSON parse failures
+        }
+        throw new Error(errorMessage)
+      }
+
+      const metadataResult = await metadataResponse.json()
+
+      resetForm()
+
+      setSubmitStatus('success')
+      setSubmitMessage(
+        metadataResult?.objectKey
+          ? 'Upload saved. Ready for the next plate!'
+          : 'Upload saved.',
+      )
+    } catch (error) {
+      console.error(error)
+      setSubmitStatus('error')
+      setSubmitMessage(error.message || 'Upload failed. Please try again.')
+    }
   }
 
   return (
@@ -381,8 +540,8 @@ function UploadPage() {
         <p className="max-w-2xl text-base text-slate-600">
           Start a new labeling session by uploading a plate image, tagging it
           with dining context, then listing every menu item and its serving
-          count. We&apos;ll wire this form to S3 and DynamoDB in the next
-          iteration.
+          count. The form now uploads directly to S3 and stores the metadata in
+          DynamoDB for your evaluation set.
         </p>
         <div className="rounded-lg border border-amber-200 bg-amber-50 px-4 py-3 text-sm text-amber-800">
           <p className="font-medium">Before you upload:</p>
@@ -671,7 +830,7 @@ function UploadPage() {
                       <input
                         type="number"
                         min="0"
-                        step="0.25"
+                        step="0.01"
                         required
                         placeholder="1"
                         value={item.servings}
@@ -712,21 +871,43 @@ function UploadPage() {
         </div>
 
         <div className="flex flex-col gap-3 border-t border-slate-200 pt-6 sm:flex-row sm:items-center sm:justify-between">
-          <span className="text-sm text-slate-500">
-            We&apos;ll enable submission once the backend upload flow is ready.
-          </span>
+          <div className="space-y-2 text-sm text-slate-500 sm:max-w-md">
+            <p>
+              Saving uploads the plate image to S3 and records the labeling metadata.
+            </p>
+            {submitStatus === 'error' ? (
+              <div className="rounded-md border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-700 shadow-sm">
+                {submitMessage}
+              </div>
+            ) : null}
+            {submitStatus === 'success' ? (
+              <div className="rounded-md border border-emerald-200 bg-emerald-50 px-3 py-2 text-sm text-emerald-700 shadow-sm">
+                {submitMessage}
+              </div>
+            ) : null}
+            {isSubmitting ? (
+              <p className="text-xs font-medium text-slate-500">Uploading…</p>
+            ) : null}
+          </div>
           <div className="flex gap-3">
             <button
               type="button"
-              className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100"
+              onClick={() => {
+                resetForm()
+                setSubmitStatus('idle')
+                setSubmitMessage('')
+              }}
+              disabled={isSubmitting}
+              className="rounded-md border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 transition hover:border-slate-300 hover:bg-slate-100 disabled:cursor-not-allowed disabled:opacity-60"
             >
               Cancel
             </button>
             <button
               type="submit"
-              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900"
+              disabled={isSubmitting}
+              className="rounded-md bg-slate-900 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-slate-900 disabled:cursor-not-allowed disabled:bg-slate-700 disabled:hover:bg-slate-700"
             >
-              Save Draft
+              {isSubmitting ? 'Saving…' : 'Save Draft'}
             </button>
           </div>
         </div>
