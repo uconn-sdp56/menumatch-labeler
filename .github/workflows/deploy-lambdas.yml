@@ -1,0 +1,69 @@
+name: Deploy Lambda Functions
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      DIST_DIR: aws/dist
+      AWS_REGION: us-east-1
+      GET_DATASET_FUNCTION: mml-get-metadata
+      PRESIGN_UPLOAD_FUNCTION: mml-upload-metadata
+      UPLOAD_METADATA_FUNCTION: mml-presign-s3-upload
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate required configuration
+        run: |
+          for var in AWS_REGION GET_DATASET_FUNCTION PRESIGN_UPLOAD_FUNCTION UPLOAD_METADATA_FUNCTION; do
+            if [ -z "${!var}" ]; then
+              echo "Missing configuration for $var. Check repository secrets."
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Prepare artifact directory
+        run: mkdir -p "${DIST_DIR}"
+
+      - name: Package get-dataset Lambda
+        run: zip -r "../../dist/get-dataset.zip" .
+        working-directory: aws/lambda/get-dataset
+
+      - name: Package presign-upload Lambda
+        run: zip -r "../../dist/presign-upload.zip" .
+        working-directory: aws/lambda/presign-upload
+
+      - name: Package upload-metadata Lambda
+        run: zip -r "../../dist/upload-metadata.zip" .
+        working-directory: aws/lambda/upload-metadata
+
+      - name: Deploy get-dataset Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${GET_DATASET_FUNCTION}" \
+            --zip-file "fileb://${DIST_DIR}/get-dataset.zip"
+
+      - name: Deploy presign-upload Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${PRESIGN_UPLOAD_FUNCTION}" \
+            --zip-file "fileb://${DIST_DIR}/presign-upload.zip"
+
+      - name: Deploy upload-metadata Lambda
+        run: |
+          aws lambda update-function-code \
+            --function-name "${UPLOAD_METADATA_FUNCTION}" \
+            --zip-file "fileb://${DIST_DIR}/upload-metadata.zip"
