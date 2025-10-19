@@ -95,7 +95,7 @@ function DatasetPage() {
         method: 'GET',
         headers: {
           Accept: 'application/json',
-          'X-Upload-Token': authToken,
+          'X-Api-Key': authToken,
         },
       }
       if (signal) {

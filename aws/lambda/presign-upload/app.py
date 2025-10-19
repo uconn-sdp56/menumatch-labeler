@@ -15,13 +15,13 @@ logger.setLevel(logging.INFO)
 S3_BUCKET = os.environ.get("UPLOAD_BUCKET", "menumatch-labeler-uploads")
 UPLOAD_PREFIX = os.environ.get("UPLOAD_PREFIX", "v1/")
 URL_EXPIRATION_SECONDS = int(os.environ.get("URL_EXPIRATION_SECONDS", "900"))
-AUTH_TOKEN = os.environ.get("UPLOAD_AUTH_TOKEN")
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN")
 
 s3_client = boto3.client("s3")
 
 _DEFAULT_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type",
+    "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,Authorization",
     "Access-Control-Allow-Methods": "OPTIONS,POST",
 }
 
@@ -61,7 +61,7 @@ def _extract_auth_token(event):
     """Pull the shared secret from headers or query string."""
     raw_headers = (event or {}).get("headers") or {}
     headers = {str(k).lower(): v for k, v in raw_headers.items()}
-    token = headers.get("x-upload-token")
+    token = headers.get("x-api-key")
 
     if not token:
         auth_header = headers.get("authorization", "")

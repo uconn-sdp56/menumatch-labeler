@@ -14,14 +14,14 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 TABLE_NAME = os.environ.get("METADATA_TABLE", "mml-metadata")
-AUTH_TOKEN = os.environ.get("UPLOAD_AUTH_TOKEN")
+AUTH_TOKEN = os.environ.get("AUTH_TOKEN")
 
 dynamodb = boto3.resource("dynamodb")
 metadata_table = dynamodb.Table(TABLE_NAME) if TABLE_NAME else None
 
 _DEFAULT_HEADERS = {
     "Access-Control-Allow-Origin": "*",
-    "Access-Control-Allow-Headers": "Content-Type,X-Upload-Token,Authorization",
+    "Access-Control-Allow-Headers": "Content-Type,X-Api-Key,Authorization",
     "Access-Control-Allow-Methods": "OPTIONS,POST",
 }
 
@@ -58,7 +58,7 @@ def _parse_event_body(event):
 def _extract_auth_token(event):
     raw_headers = (event or {}).get("headers") or {}
     headers = {str(key).lower(): value for key, value in raw_headers.items()}
-    token = headers.get("x-upload-token")
+    token = headers.get("x-api-key")
 
     if not token:
         auth_header = headers.get("authorization", "")

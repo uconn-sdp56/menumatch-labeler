@@ -472,7 +472,7 @@ function UploadPage() {
 
     try {
       const authHeaders = {
-        'X-Upload-Token': authToken,
+        'X-Api-Key': authToken,
       }
 
       const presignResponse = await fetch(`${API_BASE_URL}/uploads/presign`, {
