@@ -2,8 +2,10 @@ name: Deploy Lambda Functions
 
 on:
   push:
-    branches:
-      - main
+    branches: [main]
+    paths:
+      - "aws/lambda/**"
+      - ".github/workflows/deploy-lambdas.yml"
   workflow_dispatch:
 
 jobs:
