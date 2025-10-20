@@ -248,6 +248,11 @@ function MenuItemSearch({
                         Item ID: {item.id}
                         {item.station ? ` • ${item.station}` : ''}
                       </span>
+                      {item.servingSize ? (
+                        <span className="text-xs text-slate-500">
+                          Serving size: {item.servingSize}
+                        </span>
+                      ) : null}
                     </button>
                   </li>
                 ))}

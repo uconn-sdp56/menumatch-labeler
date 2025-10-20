@@ -202,6 +202,42 @@ function UploadPage() {
           throw new Error('Unexpected response format.')
         }
 
+        const normalizeServingSize = (record) => {
+          if (!record || typeof record !== 'object') {
+            return ''
+          }
+
+          const candidate =
+            record.servingSize ??
+            record.serving_size ??
+            record.servingsize ??
+            record.serving ??
+            record.serving_description ??
+            record.servingDescription ??
+            record.portion ??
+            record.portionSize ??
+            record.portion_size ??
+            record.portionDescription ??
+            record.portion_description ??
+            ''
+
+          if (Array.isArray(candidate)) {
+            return candidate
+              .map((value) => (typeof value === 'string' ? value.trim() : ''))
+              .filter(Boolean)
+              .join(', ')
+          }
+          if (candidate && typeof candidate === 'object') {
+            if (typeof candidate.description === 'string') {
+              return candidate.description.trim()
+            }
+            if (typeof candidate.value === 'string') {
+              return candidate.value.trim()
+            }
+          }
+          return typeof candidate === 'string' ? candidate.trim() : ''
+        }
+
         const uniqueById = new Map()
         for (const item of payload) {
           if (!item || item.id == null || !item.name) {
@@ -213,6 +249,7 @@ function UploadPage() {
               id,
               name: item.name,
               station: item.station ?? '',
+              servingSize: normalizeServingSize(item),
             })
           }
         }
@@ -221,7 +258,43 @@ function UploadPage() {
           a.name.localeCompare(b.name, undefined, { sensitivity: 'base' }),
         )
 
-        setMenuItems(uniqueItems)
+        const itemsWithServingSize = await Promise.all(
+          uniqueItems.map(async (item) => {
+            if (item.servingSize) {
+              return item
+            }
+
+            try {
+              const detailResponse = await fetch(
+                `https://husky-eats.onrender.com/api/menuitem/${item.id}`,
+                { signal: controller.signal },
+              )
+
+              if (!detailResponse.ok) {
+                return item
+              }
+
+              const detail = await detailResponse.json()
+              if (cancelled) {
+                return item
+              }
+
+              const servingSize = normalizeServingSize(detail)
+              if (!servingSize) {
+                return item
+              }
+
+              return { ...item, servingSize }
+            } catch (detailError) {
+              if (detailError.name === 'AbortError') {
+                throw detailError
+              }
+              return item
+            }
+          }),
+        )
+
+        setMenuItems(itemsWithServingSize)
         setMenuItemsStatus('success')
       } catch (error) {
         if (cancelled || error.name === 'AbortError') {
@@ -805,12 +878,22 @@ function UploadPage() {
                             onRetry={retryMenuItems}
                           />
                           {selectedMenuItem ? (
-                            <p className="text-xs text-slate-500">
-                              Selected:{' '}
-                              <span className="font-medium text-slate-700">
-                                {selectedMenuItem.name}
-                              </span>
-                            </p>
+                            <div className="space-y-0.5 text-xs text-slate-500">
+                              <p>
+                                Selected:{' '}
+                                <span className="font-medium text-slate-700">
+                                  {selectedMenuItem.name}
+                                </span>
+                              </p>
+                              {selectedMenuItem.servingSize ? (
+                                <p>
+                                  Serving size:{' '}
+                                  <span className="font-medium text-slate-700">
+                                    {selectedMenuItem.servingSize}
+                                  </span>
+                                </p>
+                              ) : null}
+                            </div>
                           ) : null}
                           {unmatchedSelection ? (
                             <p className="text-xs text-amber-600">
