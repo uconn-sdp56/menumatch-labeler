@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { memo, useEffect, useMemo, useState } from 'react'
 
 import ApiTokenStatusCard from '../components/ApiTokenStatusCard.jsx'
 import { useApiToken } from '../components/ApiTokenProvider.jsx'
@@ -222,10 +222,18 @@ function CoveragePage() {
                 if (!label) {
                   label = mealtime !== 'all' ? formatMeal(meal) : hallName
                 }
+                const ctxKey = `${hallName}|${meal}`
                 if (!labels.has(key)) {
-                  labels.set(key, new Set())
+                  labels.set(key, new Map())
                 }
-                labels.get(key).add(label)
+                const ctxMap = labels.get(key)
+                if (!ctxMap.has(ctxKey)) {
+                  ctxMap.set(ctxKey, {
+                    label,
+                    hall: hallName,
+                    meal: formatMeal(meal),
+                  })
+                }
               }
             }
           }
@@ -234,7 +242,11 @@ function CoveragePage() {
         if (cancelled) return
         setMenuContextItems(allIds)
         setMenuContextStatus('success')
-        setContextLabels(labels)
+        const finalLabels = new Map()
+        for (const [id, ctxMap] of labels.entries()) {
+          finalLabels.set(id, Array.from(ctxMap.values()))
+        }
+        setContextLabels(finalLabels)
       } catch (error) {
         if (
           error &&
@@ -353,6 +365,22 @@ function CoveragePage() {
       : filtered
 
     return menuFiltered.sort((a, b) => {
+      if (menuFilterEnabled) {
+        const ctxCountA = Array.isArray(a.contexts) ? a.contexts.length : 0
+        const ctxCountB = Array.isArray(b.contexts) ? b.contexts.length : 0
+        const ctxDiff = ctxCountB - ctxCountA
+        if (ctxDiff !== 0) return ctxDiff
+
+        if (ctxCountA === 1 && ctxCountB === 1) {
+          const aCtx = a.contexts[0] || {}
+          const bCtx = b.contexts[0] || {}
+          const hallCompare = (aCtx.hall || '').localeCompare(bCtx.hall || '')
+          if (hallCompare !== 0) return hallCompare
+          const mealCompare = (aCtx.meal || '').localeCompare(bCtx.meal || '')
+          if (mealCompare !== 0) return mealCompare
+        }
+      }
+
       const countDiff = b.multiCount - a.multiCount
       if (countDiff !== 0) return countDiff
       return a.id.localeCompare(b.id, undefined, { numeric: true })
@@ -379,6 +407,86 @@ function CoveragePage() {
   }, [coverageById, menuItems])
 
   const visibleCount = rows.length
+
+  const Table = useMemo(
+    () =>
+      memo(function CoverageTable({ rows, menuFilterEnabled }) {
+        return (
+          <div className="overflow-x-auto">
+            <table className="min-w-full divide-y divide-slate-200 text-sm">
+              <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
+                <tr>
+                  <th className="px-4 py-3 text-left font-semibold">ID</th>
+                  <th className="px-4 py-3 text-left font-semibold">Name</th>
+                  <th className="px-4 py-3 text-left font-semibold">
+                    Total appearances
+                  </th>
+                  {menuFilterEnabled ? (
+                    <th className="px-4 py-3 text-left font-semibold">
+                      Location
+                    </th>
+                  ) : null}
+                  <th className="px-4 py-3 text-left font-semibold">
+                    Multi-item plates
+                  </th>
+                  <th className="px-4 py-3 text-left font-semibold">Solo 0–1</th>
+                  <th className="px-4 py-3 text-left font-semibold">Solo 1–2</th>
+                  <th className="px-4 py-3 text-left font-semibold">Solo 2+</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-200">
+                {rows.map((row) => {
+                  const badgeClasses =
+                    row.multiCount > 0
+                      ? 'bg-emerald-100 text-emerald-800'
+                      : 'bg-red-100 text-red-800'
+                  return (
+                    <tr key={row.id} className="even:bg-slate-50">
+                      <td className="px-4 py-3 font-mono text-xs text-slate-800">
+                        {row.id || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-800">
+                        {row.name || '—'}
+                      </td>
+                      <td className="px-4 py-3 text-slate-800">{row.total}</td>
+                      {menuFilterEnabled ? (
+                        <td className="px-4 py-3 text-slate-800">
+                          {row.contexts && row.contexts.length > 0 ? (
+                            <div className="flex flex-col gap-2">
+                              {row.contexts.map((context) => (
+                                <span
+                                  key={`${row.id}-${context.label}-${context.hall}-${context.meal}`}
+                                  className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+                                >
+                                  {context.label}
+                                </span>
+                              ))}
+                            </div>
+                          ) : (
+                            <span className="text-xs text-slate-500">—</span>
+                          )}
+                        </td>
+                      ) : null}
+                      <td className="px-4 py-3">
+                        <span
+                          className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeClasses}`}
+                        >
+                          {row.multiCount}
+                        </span>
+                      </td>
+                      <td className="px-4 py-3 text-slate-800">{row.solo0to1}</td>
+                      <td className="px-4 py-3 text-slate-800">{row.solo1to2}</td>
+                      <td className="px-4 py-3 text-slate-800">{row.solo2plus}</td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
+          </div>
+        )
+      }),
+    [],
+  )
 
   return (
     <section className="space-y-8">
@@ -538,77 +646,7 @@ function CoveragePage() {
           ) : null}
 
           {rows.length > 0 ? (
-            <div className="overflow-x-auto">
-              <table className="min-w-full divide-y divide-slate-200 text-sm">
-                <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
-                  <tr>
-                    <th className="px-4 py-3 text-left font-semibold">ID</th>
-                    <th className="px-4 py-3 text-left font-semibold">Name</th>
-                    <th className="px-4 py-3 text-left font-semibold">
-                      Multi-item plates
-                    </th>
-                    {menuFilterEnabled ? (
-                      <th className="px-4 py-3 text-left font-semibold">
-                        Location
-                      </th>
-                    ) : null}
-                    <th className="px-4 py-3 text-left font-semibold">
-                      Total appearances
-                    </th>
-                    <th className="px-4 py-3 text-left font-semibold">Solo 0–1</th>
-                    <th className="px-4 py-3 text-left font-semibold">Solo 1–2</th>
-                    <th className="px-4 py-3 text-left font-semibold">Solo 2+</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-slate-200">
-                  {rows.map((row) => {
-                    const badgeClasses =
-                      row.multiCount > 0
-                        ? 'bg-emerald-100 text-emerald-800'
-                        : 'bg-red-100 text-red-800'
-                    return (
-                      <tr key={row.id} className="even:bg-slate-50">
-                        <td className="px-4 py-3 font-mono text-xs text-slate-800">
-                          {row.id || '—'}
-                        </td>
-                        <td className="px-4 py-3 text-slate-800">
-                          {row.name || '—'}
-                        </td>
-                        <td className="px-4 py-3">
-                          <span
-                            className={`inline-flex items-center rounded-full px-2 py-0.5 text-xs font-semibold ${badgeClasses}`}
-                          >
-                            {row.multiCount}
-                          </span>
-                        </td>
-                        {menuFilterEnabled ? (
-                          <td className="px-4 py-3 text-slate-800">
-                            {row.contexts && row.contexts.length > 0 ? (
-                              <div className="flex flex-col gap-2">
-                                {row.contexts.map((context) => (
-                                  <span
-                                    key={`${row.id}-${context}`}
-                                    className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
-                                  >
-                                    {context}
-                                  </span>
-                                ))}
-                              </div>
-                            ) : (
-                              <span className="text-xs text-slate-500">—</span>
-                            )}
-                          </td>
-                        ) : null}
-                        <td className="px-4 py-3 text-slate-800">{row.total}</td>
-                        <td className="px-4 py-3 text-slate-800">{row.solo0to1}</td>
-                        <td className="px-4 py-3 text-slate-800">{row.solo1to2}</td>
-                        <td className="px-4 py-3 text-slate-800">{row.solo2plus}</td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <Table rows={rows} menuFilterEnabled={menuFilterEnabled} />
           ) : (
             authToken && (
               <p className="text-sm text-slate-600">
