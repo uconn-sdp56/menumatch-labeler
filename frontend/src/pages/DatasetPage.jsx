@@ -325,6 +325,9 @@ function DatasetPage() {
                             Difficulty
                           </th>
                           <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
+                            Uploader
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
                             Items
                           </th>
                           <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
@@ -376,6 +379,9 @@ function DatasetPage() {
                                 <td className="px-4 py-3 text-slate-700">
                                   {formatDifficulty(entry?.difficulty)}
                                 </td>
+                                <td className="px-4 py-3 text-slate-700">
+                                  {entry?.uploadedBy || '—'}
+                                </td>
                                 <td className="px-4 py-3">
                                   <div className="flex items-center gap-3">
                                     <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
@@ -398,7 +404,7 @@ function DatasetPage() {
                               {isExpanded ? (
                                 <tr>
                                   <td
-                                    colSpan={7}
+                                    colSpan={8}
                                     className="bg-slate-50 px-6 pb-6 pt-0"
                                   >
                                     <div className="mt-3 rounded-md border border-slate-200 bg-white p-4">
