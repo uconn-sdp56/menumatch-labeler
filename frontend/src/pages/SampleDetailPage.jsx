@@ -81,6 +81,7 @@ function SampleDetailPage() {
   const [downloadUrl, setDownloadUrl] = useState('')
   const [downloadError, setDownloadError] = useState('')
   const [downloadExpires, setDownloadExpires] = useState(null)
+  const [showImage, setShowImage] = useState(false)
   const [menuNames, setMenuNames] = useState({})
   const [menuStatus, setMenuStatus] = useState('idle')
   const [menuError, setMenuError] = useState('')
@@ -389,13 +390,25 @@ function SampleDetailPage() {
               </div>
             </div>
 
-            {downloadStatus === 'loading' ? (
-              <div className="mt-4 rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
-                Fetching image link…
-              </div>
-            ) : null}
+            <div className="mt-4 flex items-center gap-3">
+              {!showImage ? (
+                <button
+                  type="button"
+                  onClick={() => setShowImage(true)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
+                >
+                  View image
+                </button>
+              ) : null}
+              {downloadStatus === 'loading' ? (
+                <span className="text-xs text-slate-500">Fetching image…</span>
+              ) : null}
+              {downloadStatus === 'error' && downloadError ? (
+                <span className="text-xs text-red-600">{downloadError}</span>
+              ) : null}
+            </div>
 
-            {downloadStatus === 'success' && downloadUrl ? (
+            {showImage && downloadStatus === 'success' && downloadUrl ? (
               <div className="mt-4 flex justify-center">
                 <img
                   src={downloadUrl}
