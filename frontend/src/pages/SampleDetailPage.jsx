@@ -77,6 +77,10 @@ function SampleDetailPage() {
   const [status, setStatus] = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [record, setRecord] = useState(null)
+  const [downloadStatus, setDownloadStatus] = useState('idle')
+  const [downloadUrl, setDownloadUrl] = useState('')
+  const [downloadError, setDownloadError] = useState('')
+  const [downloadExpires, setDownloadExpires] = useState(null)
 
   useEffect(() => {
     if (!objectKey) {
@@ -153,6 +157,76 @@ function SampleDetailPage() {
     return () => controller.abort()
   }, [authToken, objectKey])
 
+  useEffect(() => {
+    if (!authToken || !record?.objectKey) {
+      setDownloadStatus('idle')
+      setDownloadUrl('')
+      setDownloadError('')
+      setDownloadExpires(null)
+      return
+    }
+
+    let cancelled = false
+    const fetchPresign = async () => {
+      setDownloadStatus('loading')
+      setDownloadError('')
+      try {
+        const response = await fetch(`${API_BASE_URL}/downloads/presign`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Api-Key': authToken,
+          },
+          body: JSON.stringify({
+            objectKey: record.objectKey,
+            bucket: record.bucket,
+          }),
+        })
+
+        if (!response.ok) {
+          let message = `Download URL request failed with status ${response.status}.`
+          try {
+            const payload = await response.json()
+            if (payload?.message) {
+              message = payload.message
+            }
+          } catch (_error) {
+            // ignore parse error
+          }
+          throw new Error(message)
+        }
+
+        const payload = await response.json()
+        if (cancelled) {
+          return
+        }
+
+        setDownloadUrl(payload?.downloadUrl || '')
+        setDownloadExpires(
+          typeof payload?.expiresIn === 'number' ? payload.expiresIn : null,
+        )
+        setDownloadStatus('success')
+      } catch (error) {
+        if (cancelled) {
+          return
+        }
+        const message =
+          error instanceof Error && error.message
+            ? error.message
+            : 'Failed to get download URL.'
+        setDownloadStatus('error')
+        setDownloadError(message)
+        setDownloadUrl('')
+        setDownloadExpires(null)
+      }
+    }
+
+    fetchPresign()
+    return () => {
+      cancelled = true
+    }
+  }, [authToken, record?.bucket, record?.objectKey])
+
   const items = useMemo(
     () => (Array.isArray(record?.items) ? record.items : []),
     [record],
@@ -185,22 +259,13 @@ function SampleDetailPage() {
             to the dataset table.
           </p>
         </div>
-        <div className="flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => navigate(-1)}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
-          >
-            Back
-          </button>
-          <button
-            type="button"
-            onClick={() => navigate('/dataset')}
-            className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
-          >
-            Dataset
-          </button>
-        </div>
+        <button
+          type="button"
+          onClick={() => navigate('/dataset')}
+          className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
+        >
+          Back to dataset
+        </button>
       </div>
 
       {!authToken ? (
@@ -239,6 +304,23 @@ function SampleDetailPage() {
                 <p>Uploader: {record.uploadedBy || '—'}</p>
               </div>
             </div>
+
+            {downloadStatus === 'loading' ? (
+              <div className="mt-4 rounded-md border border-dashed border-slate-200 bg-slate-50 px-4 py-6 text-sm text-slate-600">
+                Fetching image link…
+              </div>
+            ) : null}
+
+            {downloadStatus === 'success' && downloadUrl ? (
+              <div className="mt-4 flex justify-center">
+                <img
+                  src={downloadUrl}
+                  alt="Plate"
+                  className="max-h-[340px] w-auto max-w-full rounded-lg border border-slate-200 bg-slate-50 object-contain shadow-sm"
+                  loading="lazy"
+                />
+              </div>
+            ) : null}
 
             <dl className="mt-6 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="rounded-md border border-slate-200 bg-slate-50 p-4">

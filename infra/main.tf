@@ -169,6 +169,12 @@ data "archive_file" "presign_upload" {
   output_path = "${path.module}/dist/presign_upload.zip"
 }
 
+data "archive_file" "presign_download" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/presign_download"
+  output_path = "${path.module}/dist/presign_download.zip"
+}
+
 data "archive_file" "upload_metadata" {
   type        = "zip"
   source_dir  = "${path.module}/../aws/lambdas/upload_metadata"
@@ -218,6 +224,30 @@ resource "aws_lambda_function" "presign_upload" {
     variables = {
       UPLOAD_BUCKET          = aws_s3_bucket.uploads.bucket
       UPLOAD_PREFIX          = var.upload_prefix
+      URL_EXPIRATION_SECONDS = tostring(var.url_expiration_seconds)
+      AUTH_TOKEN             = var.auth_token
+    }
+  }
+
+  tags = {
+    Project = var.project
+    Env     = var.env
+  }
+}
+
+resource "aws_lambda_function" "presign_download" {
+  function_name = "${local.name_prefix}-presign-download"
+  role          = aws_iam_role.lambda_exec.arn
+  runtime       = "python3.11"
+  handler       = "presign_download.lambda_handler"
+
+  filename         = data.archive_file.presign_download.output_path
+  source_code_hash = data.archive_file.presign_download.output_base64sha256
+
+  environment {
+    variables = {
+      DOWNLOAD_BUCKET        = aws_s3_bucket.uploads.bucket
+      UPLOAD_BUCKET          = aws_s3_bucket.uploads.bucket
       URL_EXPIRATION_SECONDS = tostring(var.url_expiration_seconds)
       AUTH_TOKEN             = var.auth_token
     }
@@ -319,6 +349,14 @@ resource "aws_apigatewayv2_integration" "presign_upload" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "presign_download" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.presign_download.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
 resource "aws_apigatewayv2_integration" "upload_metadata" {
   api_id                 = aws_apigatewayv2_api.this.id
   integration_type       = "AWS_PROXY"
@@ -348,6 +386,12 @@ resource "aws_apigatewayv2_route" "presign_upload" {
   target    = "integrations/${aws_apigatewayv2_integration.presign_upload.id}"
 }
 
+resource "aws_apigatewayv2_route" "presign_download" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "POST /downloads/presign"
+  target    = "integrations/${aws_apigatewayv2_integration.presign_download.id}"
+}
+
 resource "aws_apigatewayv2_route" "upload_metadata" {
   api_id    = aws_apigatewayv2_api.this.id
   route_key = "POST /uploads/metadata"
@@ -373,6 +417,14 @@ resource "aws_lambda_permission" "presign_upload" {
   statement_id  = "AllowAPIGatewayInvokePresignUpload"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.presign_upload.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "presign_download" {
+  statement_id  = "AllowAPIGatewayInvokePresignDownload"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.presign_download.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }

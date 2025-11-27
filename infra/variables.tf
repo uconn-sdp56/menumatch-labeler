@@ -30,5 +30,5 @@ variable "upload_prefix" {
 variable "url_expiration_seconds" {
   description = "Presigned URL expiration"
   type        = number
-  default     = 900
+  default     = 30
 }
