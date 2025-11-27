@@ -81,6 +81,9 @@ function SampleDetailPage() {
   const [downloadUrl, setDownloadUrl] = useState('')
   const [downloadError, setDownloadError] = useState('')
   const [downloadExpires, setDownloadExpires] = useState(null)
+  const [menuNames, setMenuNames] = useState({})
+  const [menuStatus, setMenuStatus] = useState('idle')
+  const [menuError, setMenuError] = useState('')
 
   useEffect(() => {
     if (!objectKey) {
@@ -232,6 +235,87 @@ function SampleDetailPage() {
     [record],
   )
 
+  useEffect(() => {
+    const uniqueIds = Array.from(
+      new Set(
+        items
+          .map((item) => String(item?.menuItemId || '').trim())
+          .filter((id) => id.length > 0),
+      ),
+    )
+
+    if (uniqueIds.length === 0) {
+      setMenuNames({})
+      setMenuStatus('idle')
+      setMenuError('')
+      return
+    }
+
+    const controller = new AbortController()
+    let cancelled = false
+
+    const fetchNames = async () => {
+      setMenuStatus('loading')
+      setMenuError('')
+      try {
+        const entries = await Promise.all(
+          uniqueIds.map(async (id) => {
+            try {
+              const response = await fetch(
+                `https://husky-eats.onrender.com/api/menuitem/${encodeURIComponent(id)}`,
+                { signal: controller.signal },
+              )
+
+              if (!response.ok) {
+                throw new Error(`status ${response.status}`)
+              }
+
+              const payload = await response.json()
+              const name = payload?.name ? String(payload.name) : ''
+              return [id, name]
+            } catch (error) {
+              if (
+                error &&
+                typeof error === 'object' &&
+                error.name === 'AbortError'
+              ) {
+                throw error
+              }
+              return [id, '']
+            }
+          }),
+        )
+
+        if (cancelled) {
+          return
+        }
+
+        const next = {}
+        for (const [id, name] of entries) {
+          next[id] = name
+        }
+        setMenuNames(next)
+        setMenuStatus('success')
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          error.name === 'AbortError'
+        ) {
+          return
+        }
+        setMenuStatus('error')
+        setMenuError('Failed to load menu item names.')
+      }
+    }
+
+    fetchNames()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [items])
+
   const hallLabel = useMemo(() => {
     if (!record?.diningHallId) {
       return '—'
@@ -375,6 +459,9 @@ function SampleDetailPage() {
                 <p className="text-sm text-slate-600">
                   Servings recorded for this plate.
                 </p>
+                {menuStatus === 'error' && menuError ? (
+                  <p className="text-xs text-red-600">{menuError}</p>
+                ) : null}
               </div>
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 {items.length} item{items.length === 1 ? '' : 's'}
@@ -385,12 +472,9 @@ function SampleDetailPage() {
               <table className="min-w-full divide-y divide-slate-200 text-sm">
                 <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
                   <tr>
-                    <th className="px-4 py-2 text-left font-semibold">
-                      Menu item ID
-                    </th>
-                    <th className="px-4 py-2 text-left font-semibold">
-                      Servings
-                    </th>
+                    <th className="px-4 py-2 text-left font-semibold">ID</th>
+                    <th className="px-4 py-2 text-left font-semibold">Name</th>
+                    <th className="px-4 py-2 text-left font-semibold">Servings</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
@@ -399,6 +483,10 @@ function SampleDetailPage() {
                       <tr key={`${record.objectKey || 'item'}-${index}`}>
                         <td className="px-4 py-2 font-mono text-xs text-slate-800">
                           {item?.menuItemId || `Item ${index + 1}`}
+                        </td>
+                        <td className="px-4 py-2 text-slate-800">
+                          {menuNames[item?.menuItemId] ||
+                            (menuStatus === 'loading' ? 'Loading…' : '—')}
                         </td>
                         <td className="px-4 py-2 text-slate-800">
                           {formatServings(item?.servings)}
