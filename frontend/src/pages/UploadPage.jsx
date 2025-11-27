@@ -12,6 +12,7 @@ const INITIAL_METADATA = Object.freeze({
   date: '',
   diningHallId: '',
   difficulty: '',
+  uploadedBy: '',
 })
 const INITIAL_ITEM = Object.freeze({ id: 0, menuItemId: '', servings: '' })
 
@@ -475,6 +476,13 @@ function UploadPage() {
       return
     }
 
+    const uploadedBy = metadata.uploadedBy.trim()
+    if (!uploadedBy) {
+      setSubmitStatus('error')
+      setSubmitMessage('Add your uploader NetID before saving the draft.')
+      return
+    }
+
     const normalizedItems = items
       .map((item) => ({
         menuItemId: String(item.menuItemId || '').trim(),
@@ -553,6 +561,7 @@ function UploadPage() {
         date: metadata.date,
         diningHallId: metadata.diningHallId,
         difficulty: metadata.difficulty,
+        uploadedBy,
         items: normalizedItems,
       }
 
@@ -782,6 +791,23 @@ function UploadPage() {
                     </option>
                   ))}
                 </select>
+              </label>
+
+              <label className="space-y-2 sm:col-span-2">
+                <span className="text-sm font-medium text-slate-700">
+                  Uploader NetID
+                </span>
+                <input
+                  type="text"
+                  value={metadata.uploadedBy}
+                  onChange={setMetadataField('uploadedBy')}
+                  placeholder="e.g. abc12345"
+                  className="w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                  required
+                />
+                <p className="text-xs text-slate-500">
+                  Use your UConn NetID so we can track who uploaded each plate.
+                </p>
               </label>
             </div>
 

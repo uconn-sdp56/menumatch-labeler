@@ -1,4 +1,5 @@
 import { Fragment, useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 
 import ApiTokenStatusCard from '../components/ApiTokenStatusCard.jsx'
 import { useApiToken } from '../components/ApiTokenProvider.jsx'
@@ -52,30 +53,14 @@ function formatDifficulty(value) {
   return value.charAt(0).toUpperCase() + value.slice(1)
 }
 
-function formatServings(value) {
-  if (value === undefined || value === null || value === '') {
-    return '—'
-  }
-
-  const numeric = Number(value)
-  if (Number.isFinite(numeric)) {
-    if (Number.isInteger(numeric)) {
-      return numeric.toString()
-    }
-    return numeric.toFixed(2).replace(/\.?0+$/, '')
-  }
-
-  return String(value)
-}
-
 function DatasetPage() {
+  const navigate = useNavigate()
   const { authToken, openTokenModal } = useApiToken()
   const [status, setStatus] = useState('idle')
   const [errorMessage, setErrorMessage] = useState('')
   const [records, setRecords] = useState([])
   const [scannedCount, setScannedCount] = useState(0)
   const [lastUpdated, setLastUpdated] = useState(null)
-  const [expandedRows, setExpandedRows] = useState(() => new Set())
 
   const fetchDataset = useCallback(
     async (signal) => {
@@ -123,7 +108,6 @@ function DatasetPage() {
         )
         setStatus('success')
         setLastUpdated(new Date().toISOString())
-        setExpandedRows(new Set())
       } catch (error) {
         if (error && typeof error === 'object' && error.name === 'AbortError') {
           return
@@ -147,7 +131,6 @@ function DatasetPage() {
       setRecords([])
       setScannedCount(0)
       setLastUpdated(null)
-      setExpandedRows(new Set())
       return
     }
 
@@ -167,18 +150,6 @@ function DatasetPage() {
     }
 
     fetchDataset()
-  }
-
-  const toggleRow = (rowKey) => {
-    setExpandedRows((previous) => {
-      const next = new Set(previous)
-      if (next.has(rowKey)) {
-        next.delete(rowKey)
-      } else {
-        next.add(rowKey)
-      }
-      return next
-    })
   }
 
   const recordCount = records.length
@@ -231,6 +202,13 @@ function DatasetPage() {
   const showEmptyState =
     authToken && status === 'success' && recordCount === 0
   const showLoadingIndicator = status === 'loading' && recordCount === 0
+
+  const handleRowClick = (objectKey) => {
+    if (!objectKey) {
+      return
+    }
+    navigate(`/dataset/${encodeURIComponent(objectKey)}`)
+  }
 
   return (
     <section className="space-y-8">
@@ -325,6 +303,9 @@ function DatasetPage() {
                             Difficulty
                           </th>
                           <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
+                            Uploader
+                          </th>
+                          <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
                             Items
                           </th>
                           <th className="whitespace-nowrap px-4 py-3 text-left font-semibold">
@@ -338,7 +319,6 @@ function DatasetPage() {
                             entry?.objectKey ||
                             entry?.createdAt ||
                             `row-${index}`
-                          const isExpanded = expandedRows.has(rowKey)
                           const itemList = Array.isArray(entry?.items)
                             ? entry.items
                             : []
@@ -351,7 +331,10 @@ function DatasetPage() {
 
                           return (
                             <Fragment key={rowKey}>
-                              <tr className="even:bg-slate-50">
+                              <tr
+                                className="even:bg-slate-50 hover:bg-slate-100 cursor-pointer"
+                                onClick={() => handleRowClick(entry?.objectKey)}
+                              >
                                 <td className="px-4 py-3 align-top">
                                   <div className="space-y-1">
                                     <div className="font-mono text-xs text-slate-900">
@@ -376,86 +359,18 @@ function DatasetPage() {
                                 <td className="px-4 py-3 text-slate-700">
                                   {formatDifficulty(entry?.difficulty)}
                                 </td>
+                                <td className="px-4 py-3 text-slate-700">
+                                  {entry?.uploadedBy || '—'}
+                                </td>
                                 <td className="px-4 py-3">
-                                  <div className="flex items-center gap-3">
-                                    <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
-                                      {itemList.length}
-                                    </span>
-                                    <button
-                                      type="button"
-                                      onClick={() => toggleRow(rowKey)}
-                                      className="text-xs font-medium text-slate-600 underline decoration-dotted underline-offset-4 hover:text-slate-900"
-                                      aria-expanded={isExpanded}
-                                    >
-                                      {isExpanded ? 'Hide items' : 'View items'}
-                                    </button>
-                                  </div>
+                                  <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700">
+                                    {itemList.length}
+                                  </span>
                                 </td>
                                 <td className="whitespace-nowrap px-4 py-3 text-slate-700">
                                   {formatTimestamp(entry?.createdAt)}
                                 </td>
                               </tr>
-                              {isExpanded ? (
-                                <tr>
-                                  <td
-                                    colSpan={7}
-                                    className="bg-slate-50 px-6 pb-6 pt-0"
-                                  >
-                                    <div className="mt-3 rounded-md border border-slate-200 bg-white p-4">
-                                      <h3 className="text-sm font-semibold text-slate-900">
-                                        Plate items
-                                      </h3>
-                                      <p className="text-xs text-slate-500">
-                                        Detailed servings recorded for this
-                                        plate.
-                                      </p>
-                                      <div className="mt-3 overflow-x-auto">
-                                        <table className="min-w-full border border-slate-200 text-sm">
-                                          <thead className="bg-slate-100 text-xs uppercase tracking-wide text-slate-600">
-                                            <tr>
-                                              <th className="border-b border-slate-200 px-3 py-2 text-left font-semibold">
-                                                Menu item ID
-                                              </th>
-                                              <th className="border-b border-slate-200 px-3 py-2 text-left font-semibold">
-                                                Servings
-                                              </th>
-                                            </tr>
-                                          </thead>
-                                          <tbody>
-                                            {itemList.length > 0 ? (
-                                              itemList.map((item, itemIndex) => (
-                                                <tr
-                                                  key={`${rowKey}-item-${itemIndex}`}
-                                                  className="border-b border-slate-200 last:border-b-0 odd:bg-white even:bg-slate-50"
-                                                >
-                                                  <td className="px-3 py-2 font-mono text-xs text-slate-700">
-                                                    {item?.menuItemId ||
-                                                      `Item ${itemIndex + 1}`}
-                                                  </td>
-                                                  <td className="px-3 py-2 text-slate-700">
-                                                    {formatServings(
-                                                      item?.servings,
-                                                    )}
-                                                  </td>
-                                                </tr>
-                                              ))
-                                            ) : (
-                                              <tr>
-                                                <td
-                                                  colSpan={2}
-                                                  className="px-3 py-3 text-sm text-slate-500"
-                                                >
-                                                  No menu items recorded.
-                                                </td>
-                                              </tr>
-                                            )}
-                                          </tbody>
-                                        </table>
-                                      </div>
-                                    </div>
-                                  </td>
-                                </tr>
-                              ) : null}
                             </Fragment>
                           )
                         })}

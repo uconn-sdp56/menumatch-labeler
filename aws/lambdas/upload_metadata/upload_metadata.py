@@ -92,10 +92,22 @@ def _normalize_servings(value):
 
 
 def _validate_payload(payload):
-    required_fields = ["objectKey", "mealtime", "date", "diningHallId", "difficulty"]
+    required_fields = [
+        "objectKey",
+        "mealtime",
+        "date",
+        "diningHallId",
+        "difficulty",
+        "uploadedBy",
+    ]
     missing = [field for field in required_fields if not payload.get(field)]
     if missing:
         raise ValueError(f"Missing required fields: {', '.join(missing)}")
+
+    uploaded_by_raw = payload.get("uploadedBy", "")
+    uploaded_by = str(uploaded_by_raw).strip()
+    if not uploaded_by:
+        raise ValueError("uploadedBy (uploader netid) is required.")
 
     items = payload.get("items")
     if not isinstance(items, list) or len(items) == 0:
@@ -119,7 +131,7 @@ def _validate_payload(payload):
             }
         )
 
-    return normalized_items
+    return normalized_items, uploaded_by
 
 
 def lambda_handler(event, _context):
@@ -146,7 +158,7 @@ def lambda_handler(event, _context):
         return _response(400, {"message": str(exc)})
 
     try:
-        normalized_items = _validate_payload(payload)
+        normalized_items, uploaded_by = _validate_payload(payload)
     except ValueError as exc:
         return _response(400, {"message": str(exc)})
 
@@ -161,6 +173,7 @@ def lambda_handler(event, _context):
         "difficulty": payload["difficulty"],
         "items": normalized_items,
         "createdAt": now.isoformat(),
+        "uploadedBy": uploaded_by,
     }
 
     # Strip empty optional nested fields to keep the record tidy.
