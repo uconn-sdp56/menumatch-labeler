@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import ApiTokenModal from './components/ApiTokenModal.jsx'
 import DatasetPage from './pages/DatasetPage.jsx'
+import SampleDetailPage from './pages/SampleDetailPage.jsx'
 import UploadPage from './pages/UploadPage.jsx'
 
 const navLinks = [
@@ -43,6 +44,7 @@ function App() {
       <main className="mx-auto max-w-5xl px-6 py-8">
         <Routes>
           <Route index element={<UploadPage />} />
+          <Route path="/dataset/:objectKey" element={<SampleDetailPage />} />
           <Route path="/dataset" element={<DatasetPage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
