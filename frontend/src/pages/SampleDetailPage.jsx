@@ -98,14 +98,17 @@ function SampleDetailPage() {
       setStatus('loading')
       setErrorMessage('')
       try {
-        const response = await fetch(`${API_BASE_URL}/dataset`, {
-          method: 'GET',
-          headers: {
-            Accept: 'application/json',
-            'X-Api-Key': authToken,
+        const response = await fetch(
+          `${API_BASE_URL}/dataset/${encodeURIComponent(objectKey)}`,
+          {
+            method: 'GET',
+            headers: {
+              Accept: 'application/json',
+              'X-Api-Key': authToken,
+            },
+            signal: controller.signal,
           },
-          signal: controller.signal,
-        })
+        )
 
         if (!response.ok) {
           let message = `Dataset request failed with status ${response.status}.`
@@ -121,17 +124,16 @@ function SampleDetailPage() {
         }
 
         const payload = await response.json()
-        const items = Array.isArray(payload?.items) ? payload.items : []
-        const match = items.find((item) => item?.objectKey === objectKey)
+        const item = payload?.item
 
-        if (!match) {
+        if (!item) {
           setStatus('error')
           setErrorMessage('Sample not found in dataset.')
           setRecord(null)
           return
         }
 
-        setRecord(match)
+        setRecord(item)
         setStatus('success')
       } catch (error) {
         if (error && typeof error === 'object' && error.name === 'AbortError') {
