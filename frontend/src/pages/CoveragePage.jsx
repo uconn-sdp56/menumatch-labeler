@@ -3,6 +3,22 @@ import { useEffect, useMemo, useState } from 'react'
 import ApiTokenStatusCard from '../components/ApiTokenStatusCard.jsx'
 import { useApiToken } from '../components/ApiTokenProvider.jsx'
 import { API_BASE_URL } from '../lib/config.js'
+import { DINING_HALLS } from '../lib/diningHalls.js'
+
+const mealtimeOptions = [
+  { value: 'all', label: 'All meal times' },
+  { value: 'breakfast', label: 'Breakfast' },
+  { value: 'lunch', label: 'Lunch' },
+  { value: 'dinner', label: 'Dinner' },
+]
+
+const todayIsoDate = () => {
+  const now = new Date()
+  const year = now.getFullYear()
+  const month = String(now.getMonth() + 1).padStart(2, '0')
+  const day = String(now.getDate()).padStart(2, '0')
+  return `${year}-${month}-${day}`
+}
 
 function CoveragePage() {
   const { authToken, openTokenModal } = useApiToken()
@@ -14,7 +30,17 @@ function CoveragePage() {
   const [menuError, setMenuError] = useState('')
   const [menuItems, setMenuItems] = useState([])
 
-  const [search, setSearch] = useState('')
+  const [pendingSearch, setPendingSearch] = useState('')
+  const [appliedSearch, setAppliedSearch] = useState('')
+  const [menuDate, setMenuDate] = useState('')
+  const [mealtime, setMealtime] = useState('all')
+  const [diningHallId, setDiningHallId] = useState('all')
+  const [menuFilterEnabled, setMenuFilterEnabled] = useState(false)
+  const [filterVersion, setFilterVersion] = useState(0)
+  const [menuContextItems, setMenuContextItems] = useState(new Set())
+  const [menuContextStatus, setMenuContextStatus] = useState('idle')
+  const [menuContextError, setMenuContextError] = useState('')
+  const [contextLabels, setContextLabels] = useState(new Map())
 
   useEffect(() => {
     if (!authToken) {
@@ -116,6 +142,125 @@ function CoveragePage() {
     return () => controller.abort()
   }, [])
 
+  useEffect(() => {
+    const hasContext =
+      menuFilterEnabled &&
+      Boolean(menuDate) &&
+      Boolean(mealtime) &&
+      Boolean(diningHallId)
+    if (!hasContext) {
+      setMenuContextItems(new Set())
+      setMenuContextStatus('idle')
+      setMenuContextError('')
+      setContextLabels(new Map())
+      return
+    }
+
+    const controller = new AbortController()
+    let cancelled = false
+
+    const fetchMenuContext = async () => {
+      setMenuContextStatus('loading')
+      setMenuContextError('')
+
+      const hallIds =
+        diningHallId === 'all'
+          ? DINING_HALLS.map((hall) => hall.id)
+          : [diningHallId]
+      const mealIds =
+        mealtime === 'all'
+          ? ['breakfast', 'lunch', 'dinner']
+          : [mealtime]
+
+      try {
+        const allIds = new Set()
+        const labels = new Map()
+        for (const hall of hallIds) {
+          for (const meal of mealIds) {
+            const params = new URLSearchParams({
+              hallid: hall,
+              meal,
+              date: menuDate,
+            })
+            const response = await fetch(
+              `https://husky-eats.onrender.com/api/menu?${params.toString()}`,
+              { signal: controller.signal },
+            )
+
+            if (!response.ok) {
+              throw new Error(
+                `Menu request failed with status ${response.status}`,
+              )
+            }
+
+            const payload = await response.json()
+            if (!Array.isArray(payload)) {
+              throw new Error('Unexpected menu response format.')
+            }
+
+            for (const item of payload) {
+              if (item?.id != null) {
+                const key = String(item.id)
+                allIds.add(key)
+                const hallName =
+                  hall === 'all'
+                    ? 'All halls'
+                    : DINING_HALLS.find((h) => String(h.id) === String(hall))
+                        ?.name || `Hall ${hall}`
+
+                const formatMeal = (value) =>
+                  value.charAt(0).toUpperCase() + value.slice(1)
+
+                const parts = []
+                if (diningHallId === 'all') {
+                  parts.push(hallName)
+                }
+                if (mealtime === 'all') {
+                  parts.push(formatMeal(meal))
+                }
+                let label = parts.join(' — ')
+                if (!label) {
+                  label = mealtime !== 'all' ? formatMeal(meal) : hallName
+                }
+                if (!labels.has(key)) {
+                  labels.set(key, new Set())
+                }
+                labels.get(key).add(label)
+              }
+            }
+          }
+        }
+
+        if (cancelled) return
+        setMenuContextItems(allIds)
+        setMenuContextStatus('success')
+        setContextLabels(labels)
+      } catch (error) {
+        if (
+          error &&
+          typeof error === 'object' &&
+          error.name === 'AbortError'
+        ) {
+          return
+        }
+        if (!cancelled) {
+          setMenuContextStatus('error')
+          setMenuContextError(
+            error instanceof Error && error.message
+              ? error.message
+              : 'Failed to load menu for selected context.',
+          )
+        }
+      }
+    }
+
+    fetchMenuContext()
+    return () => {
+      cancelled = true
+      controller.abort()
+    }
+  }, [diningHallId, mealtime, menuDate, menuFilterEnabled, filterVersion])
+
   const coverageById = useMemo(() => {
     const map = new Map()
 
@@ -161,7 +306,7 @@ function CoveragePage() {
   }, [records])
 
   const rows = useMemo(() => {
-    const searchTerm = search.trim().toLowerCase()
+    const searchTerm = appliedSearch.trim().toLowerCase()
     const baseItems = menuItems.length > 0 ? menuItems : []
 
     const combined = baseItems.map((menuItem) => {
@@ -177,6 +322,8 @@ function CoveragePage() {
         id: menuItem.id,
         name: menuItem.name,
         ...coverage,
+        inMenu: menuContextItems.has(menuItem.id),
+        contexts: Array.from(contextLabels.get(menuItem.id) || []),
       }
     })
 
@@ -187,6 +334,8 @@ function CoveragePage() {
           id,
           name: '',
           ...coverage,
+          inMenu: menuContextItems.has(id),
+          contexts: Array.from(contextLabels.get(id) || []),
         })
       }
     }
@@ -199,12 +348,23 @@ function CoveragePage() {
       )
     })
 
-    return filtered.sort((a, b) => {
+    const menuFiltered = menuFilterEnabled
+      ? filtered.filter((row) => row.inMenu)
+      : filtered
+
+    return menuFiltered.sort((a, b) => {
       const countDiff = b.multiCount - a.multiCount
       if (countDiff !== 0) return countDiff
       return a.id.localeCompare(b.id, undefined, { numeric: true })
     })
-  }, [coverageById, menuItems, search])
+  }, [
+    appliedSearch,
+    coverageById,
+    menuContextItems,
+    menuItems,
+    menuFilterEnabled,
+    filterVersion,
+  ])
 
   const totalCatalog = menuItems.length
   const coveredCount = useMemo(() => {
@@ -217,6 +377,8 @@ function CoveragePage() {
     }
     return count
   }, [coverageById, menuItems])
+
+  const visibleCount = rows.length
 
   return (
     <section className="space-y-8">
@@ -240,7 +402,9 @@ function CoveragePage() {
             </h2>
             <p className="text-sm text-slate-600">
               {totalCatalog
-                ? `${coveredCount} of ${totalCatalog} catalog items have at least one label.`
+                ? `Showing ${visibleCount} ${
+                    visibleCount === 1 ? 'item' : 'items'
+                  } (covered ${coveredCount} of ${totalCatalog} catalog items).`
                 : 'Loading catalog…'}
             </p>
             {datasetStatus === 'error' && datasetError ? (
@@ -249,24 +413,116 @@ function CoveragePage() {
             {menuStatus === 'error' && menuError ? (
               <p className="text-xs text-red-600">{menuError}</p>
             ) : null}
+            {menuContextStatus === 'error' && menuContextError ? (
+              <p className="text-xs text-red-600">{menuContextError}</p>
+            ) : null}
           </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="search"
-              value={search}
-              onChange={(e) => setSearch(e.target.value)}
-              placeholder="Search by ID or name"
-              className="w-60 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
-            />
-            {!authToken ? (
+          <div className="flex flex-col gap-3">
+            <div className="flex flex-wrap items-center gap-3">
+              <input
+                type="search"
+                value={pendingSearch}
+                onChange={(e) => setPendingSearch(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') {
+                    e.preventDefault()
+                    setAppliedSearch(pendingSearch)
+                    if (!menuDate) {
+                      setMenuFilterEnabled(false)
+                      setMenuContextItems(new Set())
+                      setMenuContextStatus('idle')
+                      setMenuContextError('')
+                    } else {
+                      setMenuFilterEnabled(true)
+                    }
+                    setFilterVersion((prev) => prev + 1)
+                  }
+                }}
+                placeholder="Search by ID or name"
+                className="w-60 rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+              />
               <button
                 type="button"
-                onClick={openTokenModal}
-                className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
+                onClick={() => {
+                  setAppliedSearch(pendingSearch)
+                  if (!menuDate) {
+                    setMenuFilterEnabled(false)
+                    setMenuContextItems(new Set())
+                    setMenuContextStatus('idle')
+                    setMenuContextError('')
+                  } else {
+                    setMenuFilterEnabled(true)
+                  }
+                  setFilterVersion((prev) => prev + 1)
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
               >
-                Set API token
+                Apply filters
               </button>
-            ) : null}
+              <button
+                type="button"
+                onClick={() => {
+                  setPendingSearch('')
+                  setAppliedSearch('')
+                  setMenuDate('')
+                  setMealtime('all')
+                  setDiningHallId('all')
+                  setMenuFilterEnabled(false)
+                  setMenuContextItems(new Set())
+                  setMenuContextStatus('idle')
+                  setMenuContextError('')
+                  setFilterVersion((prev) => prev + 1)
+                }}
+                className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
+              >
+                Reset filters
+              </button>
+              {!authToken ? (
+                <button
+                  type="button"
+                  onClick={openTokenModal}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm font-medium text-slate-700 shadow-sm transition hover:border-slate-400 hover:bg-slate-100"
+                >
+                  Set API token
+                </button>
+              ) : null}
+            </div>
+            <div className="space-y-2 rounded-md border border-slate-200 bg-slate-50 p-3">
+              <div className="text-xs font-semibold uppercase tracking-wide text-slate-500">
+                Menu context
+              </div>
+              <div className="flex flex-wrap items-center gap-3">
+                <input
+                  type="date"
+                  value={menuDate}
+                  onChange={(e) => setMenuDate(e.target.value)}
+                  className="rounded-md border border-slate-300 px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                />
+                <select
+                  value={mealtime}
+                  onChange={(e) => setMealtime(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                >
+                  {mealtimeOptions.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </select>
+                <select
+                  value={diningHallId}
+                  onChange={(e) => setDiningHallId(e.target.value)}
+                  className="rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm outline-none transition focus:border-slate-500 focus:ring-2 focus:ring-slate-200"
+                >
+                  <option value="all">All halls</option>
+                  {DINING_HALLS.map((hall) => (
+                    <option key={hall.id} value={hall.id}>
+                      {hall.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            </div>
           </div>
         </div>
 
@@ -291,6 +547,11 @@ function CoveragePage() {
                     <th className="px-4 py-3 text-left font-semibold">
                       Multi-item plates
                     </th>
+                    {menuFilterEnabled ? (
+                      <th className="px-4 py-3 text-left font-semibold">
+                        Location
+                      </th>
+                    ) : null}
                     <th className="px-4 py-3 text-left font-semibold">
                       Total appearances
                     </th>
@@ -320,6 +581,24 @@ function CoveragePage() {
                             {row.multiCount}
                           </span>
                         </td>
+                        {menuFilterEnabled ? (
+                          <td className="px-4 py-3 text-slate-800">
+                            {row.contexts && row.contexts.length > 0 ? (
+                              <div className="flex flex-col gap-2">
+                                {row.contexts.map((context) => (
+                                  <span
+                                    key={`${row.id}-${context}`}
+                                    className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-medium text-slate-700"
+                                  >
+                                    {context}
+                                  </span>
+                                ))}
+                              </div>
+                            ) : (
+                              <span className="text-xs text-slate-500">—</span>
+                            )}
+                          </td>
+                        ) : null}
                         <td className="px-4 py-3 text-slate-800">{row.total}</td>
                         <td className="px-4 py-3 text-slate-800">{row.solo0to1}</td>
                         <td className="px-4 py-3 text-slate-800">{row.solo1to2}</td>
@@ -333,7 +612,9 @@ function CoveragePage() {
           ) : (
             authToken && (
               <p className="text-sm text-slate-600">
-                No catalog items to display yet.
+                {menuFilterEnabled
+                  ? 'No menu items were found for the selected menu context.'
+                  : 'No catalog items to display yet.'}
               </p>
             )
           )}
