@@ -1,6 +1,7 @@
 import { NavLink, Navigate, Route, Routes } from 'react-router-dom'
 import ApiTokenModal from './components/ApiTokenModal.jsx'
 import DatasetPage from './pages/DatasetPage.jsx'
+import GuestimatePage from './pages/GuestimatePage.jsx'
 import SampleDetailPage from './pages/SampleDetailPage.jsx'
 import UploadPage from './pages/UploadPage.jsx'
 import CoveragePage from './pages/CoveragePage.jsx'
@@ -9,6 +10,7 @@ const navLinks = [
   { to: '/', label: 'Upload' },
   { to: '/dataset', label: 'Dataset' },
   { to: '/coverage', label: 'Coverage' },
+  { to: '/guestimate', label: 'Guestimate' },
 ]
 
 function App() {
@@ -49,6 +51,7 @@ function App() {
           <Route path="/dataset/:objectKey" element={<SampleDetailPage />} />
           <Route path="/dataset" element={<DatasetPage />} />
           <Route path="/coverage" element={<CoveragePage />} />
+          <Route path="/guestimate" element={<GuestimatePage />} />
           <Route path="*" element={<Navigate to="/" replace />} />
         </Routes>
       </main>

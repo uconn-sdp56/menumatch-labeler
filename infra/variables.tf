@@ -32,3 +32,9 @@ variable "url_expiration_seconds" {
   type        = number
   default     = 30
 }
+
+variable "huskyeats_base_url" {
+  description = "Base URL for the Husky Eats API"
+  type        = string
+  default     = "https://husky-eats.onrender.com/api"
+}

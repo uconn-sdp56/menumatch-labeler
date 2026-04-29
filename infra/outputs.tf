@@ -12,3 +12,8 @@ output "metadata_table" {
   description = "DynamoDB table for upload metadata"
   value       = aws_dynamodb_table.metadata.name
 }
+
+output "guestimate_table" {
+  description = "DynamoDB table for human nutrition estimates"
+  value       = aws_dynamodb_table.guestimates.name
+}

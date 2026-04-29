@@ -27,9 +27,10 @@ provider "aws" {
 # ---------- Naming helpers ----------
 
 locals {
-  name_prefix         = "${var.project}-${var.env}"
-  uploads_bucket_name = "${local.name_prefix}-uploads"
-  metadata_table_name = "${local.name_prefix}-metadata"
+  name_prefix           = "${var.project}-${var.env}"
+  uploads_bucket_name   = "${local.name_prefix}-uploads"
+  metadata_table_name   = "${local.name_prefix}-metadata"
+  guestimate_table_name = "${local.name_prefix}-guestimates"
 }
 
 # ---------- Storage: S3 + DynamoDB ----------
@@ -70,6 +71,28 @@ resource "aws_dynamodb_table" "metadata" {
 
   attribute {
     name = "objectKey"
+    type = "S"
+  }
+
+  tags = {
+    Project = var.project
+    Env     = var.env
+  }
+}
+
+resource "aws_dynamodb_table" "guestimates" {
+  name         = local.guestimate_table_name
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "sampleId"
+  range_key    = "guessedAt"
+
+  attribute {
+    name = "sampleId"
+    type = "S"
+  }
+
+  attribute {
+    name = "guessedAt"
     type = "S"
   }
 
@@ -126,6 +149,7 @@ data "aws_iam_policy_document" "lambda_extra" {
 
     resources = [
       aws_dynamodb_table.metadata.arn,
+      aws_dynamodb_table.guestimates.arn,
     ]
   }
 
@@ -187,6 +211,12 @@ data "archive_file" "get_dataset_item" {
   output_path = "${path.module}/dist/get_dataset_item.zip"
 }
 
+data "archive_file" "guestimate" {
+  type        = "zip"
+  source_dir  = "${path.module}/../aws/lambdas/guestimate"
+  output_path = "${path.module}/dist/guestimate.zip"
+}
+
 # ---------- Lambda functions ----------
 
 resource "aws_lambda_function" "get_dataset" {
@@ -197,7 +227,7 @@ resource "aws_lambda_function" "get_dataset" {
 
   filename         = data.archive_file.get_dataset.output_path
   source_code_hash = data.archive_file.get_dataset.output_base64sha256
-  
+
   environment {
     variables = {
       METADATA_TABLE = aws_dynamodb_table.metadata.name
@@ -303,6 +333,34 @@ resource "aws_lambda_function" "get_dataset_item" {
   }
 }
 
+resource "aws_lambda_function" "guestimate" {
+  function_name = "${local.name_prefix}-guestimate"
+  role          = aws_iam_role.lambda_exec.arn
+  runtime       = "python3.11"
+  handler       = "guestimate.lambda_handler"
+  timeout       = 30
+  memory_size   = 256
+
+  filename         = data.archive_file.guestimate.output_path
+  source_code_hash = data.archive_file.guestimate.output_base64sha256
+
+  environment {
+    variables = {
+      METADATA_TABLE         = aws_dynamodb_table.metadata.name
+      GUESTIMATE_TABLE       = aws_dynamodb_table.guestimates.name
+      UPLOAD_BUCKET          = aws_s3_bucket.uploads.bucket
+      URL_EXPIRATION_SECONDS = tostring(var.url_expiration_seconds)
+      AUTH_TOKEN             = var.auth_token
+      HUSKYEATS_BASE_URL     = var.huskyeats_base_url
+    }
+  }
+
+  tags = {
+    Project = var.project
+    Env     = var.env
+  }
+}
+
 # ---------- HTTP API (API Gateway v2) ----------
 
 resource "aws_apigatewayv2_api" "this" {
@@ -373,6 +431,14 @@ resource "aws_apigatewayv2_integration" "get_dataset_item" {
   payload_format_version = "2.0"
 }
 
+resource "aws_apigatewayv2_integration" "guestimate" {
+  api_id                 = aws_apigatewayv2_api.this.id
+  integration_type       = "AWS_PROXY"
+  integration_uri        = aws_lambda_function.guestimate.invoke_arn
+  integration_method     = "POST"
+  payload_format_version = "2.0"
+}
+
 # Routes: match what your frontend expects
 resource "aws_apigatewayv2_route" "get_dataset" {
   api_id    = aws_apigatewayv2_api.this.id
@@ -402,6 +468,24 @@ resource "aws_apigatewayv2_route" "get_dataset_item" {
   api_id    = aws_apigatewayv2_api.this.id
   route_key = "GET /dataset/{objectKey+}"
   target    = "integrations/${aws_apigatewayv2_integration.get_dataset_item.id}"
+}
+
+resource "aws_apigatewayv2_route" "guestimate_sample" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "GET /guestimate/sample"
+  target    = "integrations/${aws_apigatewayv2_integration.guestimate.id}"
+}
+
+resource "aws_apigatewayv2_route" "guestimate_guess" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "POST /guestimate/guess"
+  target    = "integrations/${aws_apigatewayv2_integration.guestimate.id}"
+}
+
+resource "aws_apigatewayv2_route" "guestimate_analysis" {
+  api_id    = aws_apigatewayv2_api.this.id
+  route_key = "GET /guestimate/analysis"
+  target    = "integrations/${aws_apigatewayv2_integration.guestimate.id}"
 }
 
 # Allow API Gateway to invoke the Lambdas
@@ -441,6 +525,14 @@ resource "aws_lambda_permission" "get_dataset_item" {
   statement_id  = "AllowAPIGatewayInvokeGetDatasetItem"
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.get_dataset_item.function_name
+  principal     = "apigateway.amazonaws.com"
+  source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
+}
+
+resource "aws_lambda_permission" "guestimate" {
+  statement_id  = "AllowAPIGatewayInvokeGuestimate"
+  action        = "lambda:InvokeFunction"
+  function_name = aws_lambda_function.guestimate.function_name
   principal     = "apigateway.amazonaws.com"
   source_arn    = "${aws_apigatewayv2_api.this.execution_arn}/*/*"
 }
