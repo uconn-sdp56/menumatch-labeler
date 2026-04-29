@@ -72,6 +72,10 @@ function createGuestimateRunSeed() {
 }
 
 function formatNumber(value, options = {}) {
+  if (value === undefined || value === null || value === '') {
+    return '-'
+  }
+
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
     return '-'
@@ -89,6 +93,10 @@ function formatMacro(value, unit, options = {}) {
 }
 
 function formatPercent(value) {
+  if (value === undefined || value === null || value === '') {
+    return '-'
+  }
+
   const numeric = Number(value)
   if (!Number.isFinite(numeric)) {
     return '-'
@@ -359,6 +367,11 @@ function GuestimatePage() {
   const sampleContext = formatSampleContext(sample)
   const analysisNutrients = analysis?.byNutrient || {}
   const hasAnalysis = analysisStatus === 'success' && analysis
+  const filterMaxPercent = analysis?.percentErrorFilter?.maxPercentError
+  const filterMaxPercentLabel =
+    filterMaxPercent === undefined || filterMaxPercent === null
+      ? '150%'
+      : formatPercent(filterMaxPercent)
 
   return (
     <section className="space-y-8">
@@ -662,9 +675,16 @@ function GuestimatePage() {
                       Metric set
                     </p>
                     <p className="mt-2 text-sm font-medium text-slate-900">
-                      MAE, RMSE, percentage MAE
+                      MAE, RMSE, filtered % MAE
                     </p>
                   </div>
+                </div>
+
+                <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
+                  % MAE excludes macro/sample pairs where ground truth is under
+                  100 kcal or 5 g, and pairs with absolute percentage error over{' '}
+                  {filterMaxPercentLabel}. MAE, RMSE, and bias still use all
+                  guesses.
                 </div>
 
                 {Number(analysis.guessCount) > 0 ? (
@@ -704,7 +724,20 @@ function GuestimatePage() {
                                 {formatMacro(row.rmse, macro.unit)}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
-                                {formatPercent(row.pmae)}
+                                <div className="flex flex-col gap-0.5">
+                                  <span>{formatPercent(row.pmae)}</span>
+                                  <span className="text-xs text-slate-500">
+                                    n={formatNumber(row.percentCount, {
+                                      maximumFractionDigits: 0,
+                                    })}
+                                    {Number(row.percentExcludedCount) > 0
+                                      ? `, excluded ${formatNumber(
+                                          row.percentExcludedCount,
+                                          { maximumFractionDigits: 0 },
+                                        )}`
+                                      : ''}
+                                  </span>
+                                </div>
                               </td>
                               <td className="px-4 py-3 text-slate-700">
                                 {formatMacro(row.meanError, macro.unit)}

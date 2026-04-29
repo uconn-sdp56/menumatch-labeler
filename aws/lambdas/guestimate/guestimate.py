@@ -27,6 +27,13 @@ HUSKYEATS_BASE_URL = os.environ.get(
 ).rstrip("/")
 
 MACRO_FIELDS = ("kcal", "protein_g", "carb_g", "fat_g")
+PERCENT_ERROR_MAX = 1.5
+PERCENT_MIN_GROUND_TRUTH = {
+    "kcal": 100.0,
+    "protein_g": 5.0,
+    "carb_g": 5.0,
+    "fat_g": 5.0,
+}
 GUESS_ALIASES = {
     "kcal": ("kcal", "calories", "calories_kcal"),
     "protein_g": ("protein_g", "protein", "proteins", "proteinGrams"),
@@ -467,6 +474,8 @@ def _compute_metrics(records):
         sq_errors = []
         perc_errors = []
         signed_errors = []
+        low_ground_truth_exclusions = 0
+        outlier_exclusions = 0
 
         for record in records:
             ground_truth = record.get("groundTruth") or {}
@@ -482,15 +491,26 @@ def _compute_metrics(records):
             signed_errors.append(error)
             abs_errors.append(abs_error)
             sq_errors.append(error * error)
-            if ground_truth_value > 0:
-                perc_errors.append(abs_error / ground_truth_value)
+
+            min_ground_truth = PERCENT_MIN_GROUND_TRUTH[field]
+            if ground_truth_value < min_ground_truth:
+                low_ground_truth_exclusions += 1
+                continue
+
+            percent_error = abs_error / ground_truth_value
+            if percent_error > PERCENT_ERROR_MAX:
+                outlier_exclusions += 1
+                continue
+
+            perc_errors.append(percent_error)
 
         mae = sum(abs_errors) / len(abs_errors) if abs_errors else 0.0
         rmse = math.sqrt(sum(sq_errors) / len(sq_errors)) if sq_errors else 0.0
-        pmae = sum(perc_errors) / len(perc_errors) if perc_errors else 0.0
+        pmae = sum(perc_errors) / len(perc_errors) if perc_errors else None
         mean_error = (
             sum(signed_errors) / len(signed_errors) if signed_errors else 0.0
         )
+        percent_excluded_count = low_ground_truth_exclusions + outlier_exclusions
 
         metrics[f"macro_mae_{field}"] = mae
         metrics[f"macro_rmse_{field}"] = rmse
@@ -502,6 +522,10 @@ def _compute_metrics(records):
             "meanError": mean_error,
             "count": len(abs_errors),
             "percentCount": len(perc_errors),
+            "percentTotalCount": len(abs_errors),
+            "percentExcludedCount": percent_excluded_count,
+            "lowGroundTruthExcludedCount": low_ground_truth_exclusions,
+            "outlierExcludedCount": outlier_exclusions,
         }
 
     return metrics, by_nutrient
@@ -531,6 +555,10 @@ def _handle_get_analysis():
             "sampleCount": len(unique_samples),
             "metrics": metrics,
             "byNutrient": by_nutrient,
+            "percentErrorFilter": {
+                "maxPercentError": PERCENT_ERROR_MAX,
+                "minGroundTruth": PERCENT_MIN_GROUND_TRUTH,
+            },
             "latestGuesses": latest,
         },
     )
