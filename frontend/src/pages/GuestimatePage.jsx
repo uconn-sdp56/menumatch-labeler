@@ -367,11 +367,6 @@ function GuestimatePage() {
   const sampleContext = formatSampleContext(sample)
   const analysisNutrients = analysis?.byNutrient || {}
   const hasAnalysis = analysisStatus === 'success' && analysis
-  const filterMaxPercent = analysis?.percentErrorFilter?.maxPercentError
-  const filterMaxPercentLabel =
-    filterMaxPercent === undefined || filterMaxPercent === null
-      ? '150%'
-      : formatPercent(filterMaxPercent)
 
   return (
     <section className="space-y-8">
@@ -682,9 +677,7 @@ function GuestimatePage() {
 
                 <div className="rounded-md border border-slate-200 bg-slate-50 px-4 py-3 text-sm text-slate-600">
                   % MAE excludes macro/sample pairs where ground truth is under
-                  100 kcal or 5 g, and pairs with absolute percentage error over{' '}
-                  {filterMaxPercentLabel}. MAE, RMSE, and bias still use all
-                  guesses.
+                  100 kcal or 5 g. MAE, RMSE, and bias still use all guesses.
                 </div>
 
                 {Number(analysis.guessCount) > 0 ? (
