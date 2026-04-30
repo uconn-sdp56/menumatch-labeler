@@ -92,7 +92,7 @@ function formatMacro(value, unit, options = {}) {
   return formatted === '-' ? '-' : `${formatted} ${unit}`
 }
 
-function formatPercent(value) {
+function formatPercent(value, options = {}) {
   if (value === undefined || value === null || value === '') {
     return '-'
   }
@@ -104,7 +104,8 @@ function formatPercent(value) {
 
   return new Intl.NumberFormat(undefined, {
     style: 'percent',
-    maximumFractionDigits: 1,
+    maximumFractionDigits: options.maximumFractionDigits ?? 1,
+    minimumFractionDigits: options.minimumFractionDigits ?? 0,
   }).format(numeric)
 }
 
@@ -367,6 +368,10 @@ function GuestimatePage() {
   const sampleContext = formatSampleContext(sample)
   const analysisNutrients = analysis?.byNutrient || {}
   const hasAnalysis = analysisStatus === 'success' && analysis
+  const metricNumberOptions = {
+    maximumFractionDigits: 2,
+    minimumFractionDigits: 2,
+  }
 
   return (
     <section className="space-y-8">
@@ -711,14 +716,16 @@ function GuestimatePage() {
                                 {macro.label}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
-                                {formatMacro(row.mae, macro.unit)}
+                                {formatMacro(row.mae, macro.unit, metricNumberOptions)}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
-                                {formatMacro(row.rmse, macro.unit)}
+                                {formatMacro(row.rmse, macro.unit, metricNumberOptions)}
                               </td>
                               <td className="px-4 py-3 text-slate-700">
                                 <div className="flex flex-col gap-0.5">
-                                  <span>{formatPercent(row.pmae)}</span>
+                                  <span>
+                                    {formatPercent(row.pmae, metricNumberOptions)}
+                                  </span>
                                   <span className="text-xs text-slate-500">
                                     n={formatNumber(row.percentCount, {
                                       maximumFractionDigits: 0,
@@ -733,7 +740,11 @@ function GuestimatePage() {
                                 </div>
                               </td>
                               <td className="px-4 py-3 text-slate-700">
-                                {formatMacro(row.meanError, macro.unit)}
+                                {formatMacro(
+                                  row.meanError,
+                                  macro.unit,
+                                  metricNumberOptions,
+                                )}
                               </td>
                             </tr>
                           )
