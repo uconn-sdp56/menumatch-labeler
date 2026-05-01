@@ -69,6 +69,39 @@ function formatServings(value) {
   return String(value)
 }
 
+function formatMacroValue(value, unit) {
+  if (value === undefined || value === null || value === '') {
+    return '—'
+  }
+
+  const numeric = Number(value)
+  if (!Number.isFinite(numeric)) {
+    return '—'
+  }
+
+  const formatted = new Intl.NumberFormat(undefined, {
+    maximumFractionDigits: 1,
+  }).format(numeric)
+
+  return `${formatted} ${unit}`
+}
+
+function readNutritionNumber(record, ...keys) {
+  if (!record || typeof record !== 'object') {
+    return null
+  }
+
+  for (const key of keys) {
+    const value = record[key]
+    const numeric = Number(value)
+    if (Number.isFinite(numeric)) {
+      return numeric
+    }
+  }
+
+  return null
+}
+
 function SampleDetailPage() {
   const navigate = useNavigate()
   const { objectKey: objectKeyParam } = useParams()
@@ -82,7 +115,7 @@ function SampleDetailPage() {
   const [downloadError, setDownloadError] = useState('')
   const [downloadExpires, setDownloadExpires] = useState(null)
   const [showImage, setShowImage] = useState(false)
-  const [menuNames, setMenuNames] = useState({})
+  const [menuDetails, setMenuDetails] = useState({})
   const [menuStatus, setMenuStatus] = useState('idle')
   const [menuError, setMenuError] = useState('')
 
@@ -246,7 +279,7 @@ function SampleDetailPage() {
     )
 
     if (uniqueIds.length === 0) {
-      setMenuNames({})
+      setMenuDetails({})
       setMenuStatus('idle')
       setMenuError('')
       return
@@ -273,7 +306,38 @@ function SampleDetailPage() {
 
               const payload = await response.json()
               const name = payload?.name ? String(payload.name) : ''
-              return [id, name]
+              return [
+                id,
+                {
+                  name,
+                  nutritionPerServing: {
+                    kcal: readNutritionNumber(
+                      payload,
+                      'calories',
+                      'kcal',
+                      'calories_kcal',
+                    ),
+                    carb_g: readNutritionNumber(
+                      payload,
+                      'totalcarbohydrate_g',
+                      'carb_g',
+                      'carbohydrates',
+                    ),
+                    fat_g: readNutritionNumber(
+                      payload,
+                      'totalfat_g',
+                      'fat_g',
+                      'fat',
+                    ),
+                    protein_g: readNutritionNumber(
+                      payload,
+                      'protein_g',
+                      'protein',
+                      'proteins',
+                    ),
+                  },
+                },
+              ]
             } catch (error) {
               if (
                 error &&
@@ -282,7 +346,7 @@ function SampleDetailPage() {
               ) {
                 throw error
               }
-              return [id, '']
+              return [id, null]
             }
           }),
         )
@@ -292,10 +356,10 @@ function SampleDetailPage() {
         }
 
         const next = {}
-        for (const [id, name] of entries) {
-          next[id] = name
+        for (const [id, details] of entries) {
+          next[id] = details
         }
-        setMenuNames(next)
+        setMenuDetails(next)
         setMenuStatus('success')
       } catch (error) {
         if (
@@ -488,28 +552,71 @@ function SampleDetailPage() {
                     <th className="px-4 py-2 text-left font-semibold">ID</th>
                     <th className="px-4 py-2 text-left font-semibold">Name</th>
                     <th className="px-4 py-2 text-left font-semibold">Servings</th>
+                    <th className="px-4 py-2 text-left font-semibold">Calories</th>
+                    <th className="px-4 py-2 text-left font-semibold">Carbs</th>
+                    <th className="px-4 py-2 text-left font-semibold">Fat</th>
+                    <th className="px-4 py-2 text-left font-semibold">Protein</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-200">
                   {items.length > 0 ? (
-                    items.map((item, index) => (
-                      <tr key={`${record.objectKey || 'item'}-${index}`}>
-                        <td className="px-4 py-2 font-mono text-xs text-slate-800">
-                          {item?.menuItemId || `Item ${index + 1}`}
-                        </td>
-                        <td className="px-4 py-2 text-slate-800">
-                          {menuNames[item?.menuItemId] ||
-                            (menuStatus === 'loading' ? 'Loading…' : '—')}
-                        </td>
-                        <td className="px-4 py-2 text-slate-800">
-                          {formatServings(item?.servings)}
-                        </td>
-                      </tr>
-                    ))
+                    items.map((item, index) => {
+                      const servings = Number(item?.servings)
+                      const details = menuDetails[item?.menuItemId] || null
+                      const nutritionPerServing = details?.nutritionPerServing
+                      const scaledNutrition =
+                        Number.isFinite(servings) && nutritionPerServing
+                          ? {
+                              kcal:
+                                nutritionPerServing.kcal == null
+                                  ? null
+                                  : servings * nutritionPerServing.kcal,
+                              carb_g:
+                                nutritionPerServing.carb_g == null
+                                  ? null
+                                  : servings * nutritionPerServing.carb_g,
+                              fat_g:
+                                nutritionPerServing.fat_g == null
+                                  ? null
+                                  : servings * nutritionPerServing.fat_g,
+                              protein_g:
+                                nutritionPerServing.protein_g == null
+                                  ? null
+                                  : servings * nutritionPerServing.protein_g,
+                            }
+                          : null
+
+                      return (
+                        <tr key={`${record.objectKey || 'item'}-${index}`}>
+                          <td className="px-4 py-2 font-mono text-xs text-slate-800">
+                            {item?.menuItemId || `Item ${index + 1}`}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {details?.name ||
+                              (menuStatus === 'loading' ? 'Loading…' : '—')}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {formatServings(item?.servings)}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {formatMacroValue(scaledNutrition?.kcal, 'kcal')}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {formatMacroValue(scaledNutrition?.carb_g, 'g')}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {formatMacroValue(scaledNutrition?.fat_g, 'g')}
+                          </td>
+                          <td className="px-4 py-2 text-slate-800">
+                            {formatMacroValue(scaledNutrition?.protein_g, 'g')}
+                          </td>
+                        </tr>
+                      )
+                    })
                   ) : (
                     <tr>
                       <td
-                        colSpan={2}
+                        colSpan={7}
                         className="px-4 py-3 text-sm text-slate-600"
                       >
                         No items recorded.
