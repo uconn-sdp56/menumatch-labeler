@@ -391,6 +391,36 @@ function SampleDetailPage() {
       : record.diningHallId
   }, [record?.diningHallId])
 
+  const mealTotals = useMemo(() => {
+    return items.reduce(
+      (totals, item) => {
+        const servings = Number(item?.servings)
+        const nutritionPerServing =
+          menuDetails[item?.menuItemId]?.nutritionPerServing || null
+
+        if (!Number.isFinite(servings) || !nutritionPerServing) {
+          return totals
+        }
+
+        if (nutritionPerServing.kcal != null) {
+          totals.kcal += servings * nutritionPerServing.kcal
+        }
+        if (nutritionPerServing.carb_g != null) {
+          totals.carb_g += servings * nutritionPerServing.carb_g
+        }
+        if (nutritionPerServing.fat_g != null) {
+          totals.fat_g += servings * nutritionPerServing.fat_g
+        }
+        if (nutritionPerServing.protein_g != null) {
+          totals.protein_g += servings * nutritionPerServing.protein_g
+        }
+
+        return totals
+      },
+      { kcal: 0, carb_g: 0, fat_g: 0, protein_g: 0 },
+    )
+  }, [items, menuDetails])
+
   return (
     <section className="space-y-8">
       <ApiTokenStatusCard />
@@ -543,6 +573,41 @@ function SampleDetailPage() {
               <span className="rounded-full bg-slate-100 px-3 py-1 text-xs font-medium text-slate-700">
                 {items.length} item{items.length === 1 ? '' : 's'}
               </span>
+            </div>
+
+            <div className="mt-4 grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Meal calories
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {formatMacroValue(mealTotals.kcal, 'kcal')}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Meal carbs
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {formatMacroValue(mealTotals.carb_g, 'g')}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Meal fat
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {formatMacroValue(mealTotals.fat_g, 'g')}
+                </p>
+              </div>
+              <div className="rounded-md border border-slate-200 bg-slate-50 p-4">
+                <p className="text-xs uppercase tracking-wide text-slate-500">
+                  Meal protein
+                </p>
+                <p className="mt-1 text-sm font-medium text-slate-900">
+                  {formatMacroValue(mealTotals.protein_g, 'g')}
+                </p>
+              </div>
             </div>
 
             <div className="mt-4 overflow-x-auto">
