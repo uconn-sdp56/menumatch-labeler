@@ -9,10 +9,11 @@ MenuMatch Labeler is a lightweight React app for uploading dining hall plate pho
 ```bash
 cd frontend
 npm install
+cp .env.example .env
 npm run dev
 ```
 
-By default the frontend points at the dev API in `frontend/src/lib/config.js`. To run against another API deployment, set `VITE_UPLOAD_API_BASE_URL` before starting Vite.
+`frontend/.env` supplies the Vite API base URL used by the browser app. Start with the dev API value from `frontend/.env.example`, or replace `VITE_UPLOAD_API_BASE_URL` with the `api_base_url` from another Terraform deployment.
 
 ## Deploy
 
@@ -27,4 +28,4 @@ terraform apply -var-file="dev.tfvars"
 
 `dev.tfvars` should include at least `env` and `auth_token`; see `infra/example.tfvars` for the minimal shape. After Terraform finishes, use the `api_base_url` output as `VITE_UPLOAD_API_BASE_URL` for the frontend build if it differs from the checked-in default.
 
-Deploy the frontend by pushing changes under `frontend/` to `main`, or by manually running the `Deploy Frontend to GitHub Pages` workflow. The workflow installs dependencies, runs `npm run build`, and publishes `frontend/dist` to GitHub Pages.
+Deploy the frontend by pushing changes under `frontend/` to `main`, or by manually running the `Deploy Frontend to GitHub Pages` workflow. Set a GitHub Actions repository variable named `VITE_UPLOAD_API_BASE_URL` before deploying; the workflow passes it into `npm run build` and publishes `frontend/dist` to GitHub Pages. Do not inject the team API token into the frontend build; users enter that token in the app at runtime.
